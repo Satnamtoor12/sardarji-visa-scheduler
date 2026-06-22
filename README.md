@@ -24,9 +24,6 @@ Works on **Windows and macOS**, in any Chromium browser (Chrome, Edge, Brave).
 5. Select the `sardarji-visa-scheduler` folder (the one containing `manifest.json`).
 6. **SardarJi Appointment Scheduler** appears in the list — done.
 
-> The extension has a fixed ID (`jonocdekbjneapljhkeijonmdkkekjcm`, set via the
-> `key` in `manifest.json`), so it stays the same every time you load it.
-
 ### Keep it loaded permanently (optional)
 
 "Load unpacked" already survives restarts. For a cleaner setup that auto-loads
