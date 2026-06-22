@@ -10,11 +10,32 @@ if (chrome.runtime.onStartup) {
   chrome.runtime.onStartup.addListener(restoreIfActive);
 }
 
-// Open side panel when extension icon is clicked
+// Clicking the icon should START the flow (not just open the panel), so turn the
+// panel-on-click behaviour OFF and handle the click ourselves below.
 if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false })
     .catch(function(e) { console.error('sidePanel setup error:', e); });
 }
+
+// Icon click → open the side panel (to show the live log) AND immediately start
+// the flow: fresh tab → clear data → login page → auto-login → monitor.
+// If not set up yet (no credentials / facility / dates), just open the panel.
+chrome.action.onClicked.addListener(function(tab) {
+  if (chrome.sidePanel && chrome.sidePanel.open) {
+    try { chrome.sidePanel.open({ windowId: tab.windowId }).catch(function() {}); } catch (e) {}
+  }
+  chrome.storage.local.get(['credentials', 'config'], function(d) {
+    var cfg = d.config || {};
+    var hasFacility = (cfg.facilities && cfg.facilities.length) || cfg.facilityId;
+    var ready = d.credentials && d.credentials.email && d.credentials.password &&
+                hasFacility && cfg.dateFrom && cfg.dateTo;
+    if (ready) {
+      startMonitoring(cfg);
+    } else {
+      addLog('Enter email/password, facility and date range in the panel, then click the icon to start.');
+    }
+  });
+});
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get(['credentials', 'config', 'schedule', 'telegram', 'notifications'], (existing) => {
@@ -354,10 +375,12 @@ function closeOldVisaTabs(freshTabId) {
   });
 }
 
-// Clean single-step fresh login:
-//   clear the visa data ONCE -> reuse one tab (or open one if none) -> load the
-//   login page. No double-clearing, no tab open/close flashing. When the login
-//   page then loads, handlePageReady sees the cleaned fresh tab and submits.
+// Fast single-tab fresh login, in this exact order:
+//   1) open/reuse ONE blank tab
+//   2) clear the visa cookies + cache + storage (once)
+//   3) load the login page in that same tab
+// When the login page loads, handlePageReady sees the cleaned fresh tab and
+// auto-submits. No double-clearing, no tab flashing.
 function openFreshLoginSession(reason) {
   chrome.storage.local.get(['loginClearInProgress', 'loginInProgress', 'credentials'], (data) => {
     if (data.loginClearInProgress || data.loginInProgress) {
@@ -370,7 +393,7 @@ function openFreshLoginSession(reason) {
       return;
     }
 
-    addLog((reason || 'Starting login') + ' — clearing visa data...');
+    addLog((reason || 'Starting login') + '...');
     chrome.storage.local.set({
       sessionCleared: false,
       loginClearInProgress: true,
@@ -378,44 +401,47 @@ function openFreshLoginSession(reason) {
       freshLoginTabId: null
     });
 
-    clearVisaSiteData().then(() => {
-      // Open the login page in a single tab (reuse an existing visa tab if any).
-      const goToLogin = (tabId) => {
-        chrome.storage.local.set({
-          sessionCleared: true,
-          loginClearInProgress: false,
-          loginInProgress: false,
-          freshLoginTabId: tabId
-        }, () => {
-          chrome.tabs.update(tabId, { url: LOGIN_URL, active: true }, () => {
-            if (chrome.runtime.lastError) {
-              addLog('Login open error: ' + chrome.runtime.lastError.message);
-              chrome.storage.local.set({ sessionCleared: false, freshLoginTabId: null });
-              scheduleNext();
-            }
+    // Given a tab: blank it → clear data → load login (the order you wanted).
+    const runInTab = (tabId) => {
+      chrome.tabs.update(tabId, { url: 'about:blank', active: true }, () => {
+        addLog('Clearing visa cookies & data...');
+        clearVisaSiteData().then(() => {
+          chrome.storage.local.set({
+            sessionCleared: true,
+            loginClearInProgress: false,
+            loginInProgress: false,
+            freshLoginTabId: tabId
+          }, () => {
+            chrome.tabs.update(tabId, { url: LOGIN_URL, active: true }, () => {
+              if (chrome.runtime.lastError) {
+                addLog('Login open error: ' + chrome.runtime.lastError.message);
+                chrome.storage.local.set({ sessionCleared: false, freshLoginTabId: null });
+                scheduleNext();
+              }
+            });
           });
         });
-      };
-
-      chrome.tabs.query({ url: 'https://ais.usvisa-info.com/*' }, (tabs) => {
-        if (tabs && tabs.length) {
-          // Reuse the first visa tab; close any extras so only one remains.
-          const keep = tabs[0].id;
-          const extras = tabs.slice(1).map((t) => t.id);
-          if (extras.length) chrome.tabs.remove(extras);
-          goToLogin(keep);
-        } else {
-          chrome.tabs.create({ url: 'about:blank', active: true }, (tab) => {
-            if (chrome.runtime.lastError || !tab || !tab.id) {
-              addLog('Tab create error.');
-              chrome.storage.local.set({ loginClearInProgress: false });
-              scheduleNext();
-              return;
-            }
-            goToLogin(tab.id);
-          });
-        }
       });
+    };
+
+    // Step 1: get a single tab (reuse an existing visa tab, else open one).
+    chrome.tabs.query({ url: 'https://ais.usvisa-info.com/*' }, (tabs) => {
+      if (tabs && tabs.length) {
+        const keep = tabs[0].id;
+        const extras = tabs.slice(1).map((t) => t.id);
+        if (extras.length) chrome.tabs.remove(extras);
+        runInTab(keep);
+      } else {
+        chrome.tabs.create({ url: 'about:blank', active: true }, (tab) => {
+          if (chrome.runtime.lastError || !tab || !tab.id) {
+            addLog('Tab create error.');
+            chrome.storage.local.set({ loginClearInProgress: false });
+            scheduleNext();
+            return;
+          }
+          runInTab(tab.id);
+        });
+      }
     });
   });
 }
@@ -645,8 +671,8 @@ function handleLoginSuccess() {
 
 function beginMonitoringLoop() {
   addLog('Monitoring active');
-  // First check right away
-  chrome.alarms.create('check-slots', { delayInMinutes: 0.15 });
+  // Start the first check instantly (no delay) for a fast launch.
+  triggerCheck();
 }
 
 function stopMonitoring() {
