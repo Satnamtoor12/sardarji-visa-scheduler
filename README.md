@@ -1,14 +1,12 @@
-# SardarJi Appointment Scheduler
+<p align="center">
+  <img src="icons/icon128.png" alt="SardarJi logo" width="120" height="120">
+</p>
+
+<h1 align="center">SardarJi Appointment Scheduler</h1>
 
 A Chrome/Chromium extension that monitors US visa appointment slots on
 `ais.usvisa-info.com` (Canada / `en-ca`), auto-logs in, alerts you when a slot in
 your date range opens, and can optionally auto-book it.
-
-> **No native host needed.** The extension does everything itself using
-> in-page (synthetic) input — it types into the login fields and clicks buttons
-> directly on the page. There is **nothing to install outside the browser**, no
-> Python, and no OS-level mouse/keyboard control. (A `native_host/` folder still
-> exists from an earlier version but is **not used** — see [Legacy](#legacy).)
 
 Works on **Windows and macOS**, in any Chromium browser (Chrome, Edge, Brave).
 
