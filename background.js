@@ -47,7 +47,8 @@ function openCleanLoginPage(reason) {
         chrome.storage.local.set({
           sessionCleared: true,
           loginClearInProgress: false,
-          freshLoginTabId: tabId
+          freshLoginTabId: tabId,
+          loginPagePrepared: true   // a clean login page is open & waiting
         }, function() {
           chrome.tabs.update(tabId, { url: LOGIN_URL, active: true });
           chrome.storage.local.get(['monitoring'], function(d) {
@@ -303,22 +304,41 @@ function clearVisaSiteData() {
 }
 
 function startMonitoring(config) {
-  chrome.storage.local.set({
-    monitoring: true,
-    config: config,
-    stats: { checks: 0, slotsFound: 0, lastCheck: null },
-    alertedSlots: {},
-    loginAttempts: 0,
-    sessionCleared: false,
-    loginClearInProgress: false,
-    loginInProgress: false,
-    freshLoginTabId: null
+  // Read the "prepared login page" state BEFORE resetting, so we can skip a
+  // redundant clear+reload if the icon already opened a clean login page.
+  chrome.storage.local.get(['loginPagePrepared', 'freshLoginTabId', 'credentials'], (prev) => {
+    chrome.storage.local.set({
+      monitoring: true,
+      config: config,
+      stats: { checks: 0, slotsFound: 0, lastCheck: null },
+      alertedSlots: {},
+      loginAttempts: 0,
+      loginClearInProgress: false,
+      loginInProgress: false
+    });
+    addLog('Starting... ' + config.facilityName + ' (' + config.dateFrom + ' → ' + config.dateTo + ')');
+
+    if (prev.loginPagePrepared && prev.freshLoginTabId && prev.credentials) {
+      // A freshly-cleared login page is already open (from the icon click).
+      // Verify the tab is still on the login page, then log in there directly —
+      // no second clear, no reload.
+      chrome.tabs.get(prev.freshLoginTabId, (tab) => {
+        if (!chrome.runtime.lastError && tab && tab.url && tab.url.indexOf('/users/sign_in') !== -1) {
+          addLog('Login page already open — logging in (no reload).');
+          chrome.storage.local.set({ sessionCleared: true, loginPagePrepared: false }, () => {
+            sendLoginWithRetry(prev.freshLoginTabId, prev.credentials, 0);
+          });
+        } else {
+          // Prepared tab gone/changed — fall back to the normal flow.
+          chrome.storage.local.set({ sessionCleared: false, freshLoginTabId: null, loginPagePrepared: false });
+          beginMonitoringLoop();
+        }
+      });
+    } else {
+      chrome.storage.local.set({ sessionCleared: false, freshLoginTabId: null, loginPagePrepared: false });
+      beginMonitoringLoop();
+    }
   });
-
-  addLog('Starting... ' + config.facilityName + ' (' + config.dateFrom + ' → ' + config.dateTo + ')');
-
-  // Don't clear cookies here — only clear before login (new session start)
-  beginMonitoringLoop();
 }
 
 // Fast single-tab fresh login, in this exact order:
@@ -344,7 +364,8 @@ function openFreshLoginSession(reason) {
       sessionCleared: false,
       loginClearInProgress: true,
       loginInProgress: false,
-      freshLoginTabId: null
+      freshLoginTabId: null,
+      loginPagePrepared: false
     });
 
     // Given a tab: blank it → clear data → load login (the order you wanted).
@@ -439,7 +460,7 @@ function handlePageReady(msg, sender) {
     // and could not report it, so clear the flags here.
     const loggedInPages = ['appointment', 'groups', 'continue-actions', 'logged-in'];
     if (loggedInPages.includes(msg.page)) {
-      chrome.storage.local.set({ loginInProgress: false, loginClearInProgress: false, loginAttempts: 0 });
+      chrome.storage.local.set({ loginInProgress: false, loginClearInProgress: false, loginAttempts: 0, loginPagePrepared: false });
     }
 
     if (msg.page === 'login') {
@@ -609,7 +630,8 @@ function handleLoginSuccess() {
     loginClearInProgress: false,
     sessionCleared: true,
     freshLoginTabId: null,
-    loginAttempts: 0
+    loginAttempts: 0,
+    loginPagePrepared: false
   });
   addLog('Login successful!');
   setTimeout(() => beginMonitoringLoop(), 3000);
@@ -630,7 +652,8 @@ function stopMonitoring() {
     loginInProgress: false,
     loginClearInProgress: false,
     loginAttempts: 0,
-    freshLoginTabId: null
+    freshLoginTabId: null,
+    loginPagePrepared: false
   });
   // Tell any open visa tab to abort an in-progress login/booking immediately,
   // so the native mouse/keyboard stops the moment STOP is pressed.
