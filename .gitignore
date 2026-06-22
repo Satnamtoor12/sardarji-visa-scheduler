@@ -1,0 +1,10 @@
+# Binaries / executables
+Update.exe
+*.exe
+
+# Windows shortcuts
+*.lnk
+
+# OS junk
+Thumbs.db
+Desktop.ini

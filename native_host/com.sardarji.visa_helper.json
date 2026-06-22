@@ -1,0 +1,9 @@
+{
+  "name": "com.sardarji.visa_helper",
+  "description": "SardarJi Visa Slot Helper - Mouse Control",
+  "path": "visa_mouse.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://jonocdekbjneapljhkeijonmdkkekjcm/"
+  ]
+}

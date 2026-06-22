@@ -1,0 +1,122 @@
+# SardarJi Appointment Scheduler
+
+A Chrome/Chromium extension that monitors US visa appointment slots on
+`ais.usvisa-info.com` (Canada / `en-ca`), auto-logs in, alerts you when a slot in
+your date range opens, and can optionally auto-book it.
+
+> **No native host needed.** The extension does everything itself using
+> in-page (synthetic) input — it types into the login fields and clicks buttons
+> directly on the page. There is **nothing to install outside the browser**, no
+> Python, and no OS-level mouse/keyboard control. (A `native_host/` folder still
+> exists from an earlier version but is **not used** — see [Legacy](#legacy).)
+
+Works on **Windows and macOS**, in any Chromium browser (Chrome, Edge, Brave).
+
+---
+
+## 1. Install the extension
+
+1. Download the code:
+   - Green **Code** button on
+     https://github.com/Satnamtoor12/sardarji-visa-scheduler → **Download ZIP**,
+     then unzip. *(Or `git clone https://github.com/Satnamtoor12/sardarji-visa-scheduler.git`)*
+2. Open `chrome://extensions` (Edge: `edge://extensions`).
+3. Turn on **Developer mode** (top-right).
+4. Click **Load unpacked**.
+5. Select the `sardarji-visa-scheduler` folder (the one containing `manifest.json`).
+6. **SardarJi Appointment Scheduler** appears in the list — done.
+
+> The extension has a fixed ID (`jonocdekbjneapljhkeijonmdkkekjcm`, set via the
+> `key` in `manifest.json`), so it stays the same every time you load it.
+
+### Keep it loaded permanently (optional)
+
+"Load unpacked" already survives restarts. For a cleaner setup that auto-loads
+the extension every time without the developer-mode prompt, launch the browser
+with the extension flag:
+
+```
+chrome.exe --load-extension="C:\path\to\sardarji-visa-scheduler"
+```
+
+Make a desktop shortcut with that flag (a dedicated `--user-data-dir` keeps it in
+its own profile). Chromium/Brave/ungoogled-chromium do this the most cleanly.
+
+---
+
+## 2. Set it up & run
+
+1. Click the extension icon to open the **side panel** (or the popup).
+2. Fill in:
+   - **Email / Password** — your usvisa-info login (saved locally in the browser).
+   - **Facility** — the consulate(s) to watch (one, or several via *Advanced*).
+   - **Date range** — earliest and latest acceptable appointment dates.
+   - **Check every (sec)** — how often to check, in seconds (a live "= X min"
+     hint shows the equivalent). Keep it sensible (see the warning below).
+   - **Auto-book** — tick to book automatically when a matching slot is found.
+3. *(Optional)* In **Advanced** set **active hours**, **Telegram alerts**
+   (bot token + chat ID), and **sound / desktop notification** toggles.
+4. Press **START**. Press **STOP** to halt immediately (it also aborts an
+   in-progress login/booking).
+
+The extension logs in on its own, then keeps checking. If the session expires it
+detects the login screen and logs back in automatically. If your credentials are
+wrong or a CAPTCHA appears, it stops and tells you (no pointless retries).
+
+---
+
+## ⚠️ Important warnings
+
+- **Terms of Service / risk** — automating `usvisa-info` may violate its terms,
+  and aggressive use can get your **account or IP temporarily blocked**. Use at
+  your own risk on your own account.
+- **Don't check too fast** — a very small interval = high block risk. Keep
+  **"Check every"** at a reasonable value; do not hammer the server.
+- **CAPTCHA / new-device verification** can't be solved automatically. If one
+  appears, log in manually once, then start monitoring again.
+
+---
+
+## Files
+
+> 📖 For an A–Z description of **every function**, see [FUNCTIONS.md](FUNCTIONS.md).
+
+| File / folder    | Purpose                                                  |
+|------------------|----------------------------------------------------------|
+| `manifest.json`  | Extension manifest (MV3) — includes the fixed `key`/ID    |
+| `background.js`  | Service worker — login flow, monitoring loop, alerts      |
+| `content.js`     | Runs on `ais.usvisa-info.com` — login, slot check, booking|
+| `popup.*`        | Toolbar popup UI                                          |
+| `sidebar.*`      | Side panel UI                                             |
+| `options.*`      | Settings page                                             |
+| `offscreen.html` | Plays the alert sound                                     |
+| `native_host/`   | **Legacy, unused** (see below)                            |
+
+---
+
+## Legacy
+
+The `native_host/` folder (Python scripts + installers) was from an earlier
+version that drove the **real OS mouse/keyboard**. That approach was dropped
+because:
+
+- the page→screen coordinate mapping was unreliable (side panel / display
+  scaling) — the cursor landed in empty areas, and
+- OS keystrokes could go to the wrong window (e.g. the address bar), which risked
+  leaking the password.
+
+The extension now uses **synthetic input** that acts directly on the correct
+page element — reliable, faster, and self-contained. You can ignore or delete the
+`native_host/` folder; it is not required.
+
+---
+
+## Troubleshooting
+
+- **Nothing happens after START** — make sure email/password are saved and you're
+  not outside the configured *active hours* (disable Schedule for 24/7).
+- **Stops with "Invalid email or password"** — fix the saved credentials, then
+  start again. (Test with a fake email if you just want to see the flow.)
+- **Stops with "CAPTCHA"** — log in manually once in the browser, then start.
+- **See logs** — the side panel's **Activity Log**, or `chrome://extensions` →
+  *Inspect views: service worker*.

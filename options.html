@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>SardarJi Settings</title>
+  <link rel="stylesheet" href="popup.css">
+  <style>
+    body { width: 100%; min-width: 400px; max-width: 500px; margin: 0 auto; padding: 20px; }
+    .back-link { font-size: 11px; color: #89b4fa; text-decoration: none; display: inline-block; margin-bottom: 10px; }
+    .back-link:hover { text-decoration: underline; }
+    .save-bar { position: sticky; bottom: 0; background: #1e1e2e; padding: 12px 0; border-top: 1px solid #313244; text-align: center; }
+    .btn-save { padding: 10px 40px; background: #a6e3a1; color: #1e1e2e; border: none; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; }
+    .btn-save:hover { background: #94d990; }
+    .saved-msg { color: #a6e3a1; font-size: 12px; margin-left: 10px; display: none; }
+  </style>
+</head>
+<body>
+  <div class="brand">
+    <span class="brand-logo" role="img" aria-label="logo"></span>
+    <h1>SardarJi Settings</h1>
+  </div>
+
+  <div class="section-group">
+    <div class="section-header">Facilities (Monitor Multiple)</div>
+    <div class="section">
+      <div class="facility-grid" id="facilityGrid">
+        <label class="fac-chip"><input type="checkbox" value="89" data-name="Calgary"><span>Calgary</span></label>
+        <label class="fac-chip"><input type="checkbox" value="90" data-name="Halifax"><span>Halifax</span></label>
+        <label class="fac-chip"><input type="checkbox" value="91" data-name="Montreal"><span>Montreal</span></label>
+        <label class="fac-chip"><input type="checkbox" value="92" data-name="Ottawa"><span>Ottawa</span></label>
+        <label class="fac-chip"><input type="checkbox" value="93" data-name="Quebec City"><span>Quebec City</span></label>
+        <label class="fac-chip"><input type="checkbox" value="94" data-name="Toronto"><span>Toronto</span></label>
+        <label class="fac-chip"><input type="checkbox" value="95" data-name="Vancouver"><span>Vancouver</span></label>
+      </div>
+      <p style="font-size:10px;color:#6c7086;margin-top:6px;">Earliest slot across all selected cities will be booked.</p>
+    </div>
+  </div>
+
+  <div class="section-group">
+    <div class="section-header">Schedule (Active Hours)</div>
+    <div class="section checkbox-row">
+      <input type="checkbox" id="scheduleEnabled" checked>
+      <label for="scheduleEnabled">Only check during peak times</label>
+    </div>
+    <div id="scheduleWindows">
+      <div class="schedule-window">
+        <span class="window-label">Morning</span>
+        <div class="row">
+          <div class="half"><input type="time" id="win1From" value="05:00"></div>
+          <span class="time-sep">to</span>
+          <div class="half"><input type="time" id="win1To" value="08:00"></div>
+        </div>
+      </div>
+      <div class="schedule-window">
+        <span class="window-label">Night</span>
+        <div class="row">
+          <div class="half"><input type="time" id="win2From" value="23:00"></div>
+          <span class="time-sep">to</span>
+          <div class="half"><input type="time" id="win2To" value="01:00"></div>
+        </div>
+      </div>
+      <div class="section checkbox-row" style="margin-top:6px">
+        <input type="checkbox" id="weekdaysOnly">
+        <label for="weekdaysOnly">Weekdays only (Mon-Fri)</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-group">
+    <div class="section-header">Telegram Alerts</div>
+    <div class="section checkbox-row">
+      <input type="checkbox" id="telegramEnabled">
+      <label for="telegramEnabled">Send Telegram notification</label>
+    </div>
+    <div id="telegramFields" style="display:none">
+      <div class="section">
+        <label>Bot Token</label>
+        <input type="text" id="telegramToken" placeholder="123456:ABC-DEF...">
+      </div>
+      <div class="section">
+        <label>Chat ID</label>
+        <input type="text" id="telegramChatId" placeholder="-100123456789">
+      </div>
+      <div class="section">
+        <button id="testTelegram" class="btn-small">Test Message</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-group">
+    <div class="section-header">Notifications</div>
+    <div class="section checkbox-row">
+      <input type="checkbox" id="soundEnabled" checked>
+      <label for="soundEnabled">Play sound on slot found</label>
+    </div>
+    <div class="section checkbox-row">
+      <input type="checkbox" id="desktopNotif" checked>
+      <label for="desktopNotif">Desktop notification</label>
+    </div>
+  </div>
+
+  <div class="save-bar">
+    <button id="saveBtn" class="btn-save">SAVE SETTINGS</button>
+    <span id="savedMsg" class="saved-msg">Saved!</span>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
