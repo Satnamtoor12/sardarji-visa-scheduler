@@ -17,25 +17,65 @@ if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
     .catch(function(e) { console.error('sidePanel setup error:', e); });
 }
 
-// Icon click → open the side panel (to show the live log) AND immediately start
-// the flow: fresh tab → clear data → login page → auto-login → monitor.
-// If not set up yet (no credentials / facility / dates), just open the panel.
+// Icon click → open the side panel AND prepare a fresh login page FAST:
+//   blank tab → clear cookies/data → open the login page.
+// Then it STOPS at the login page. It only logs in & monitors if you've pressed
+// START (monitoring on) — handlePageReady auto-continues only when monitoring is
+// active; otherwise the cleaned login page just waits for you.
 chrome.action.onClicked.addListener(function(tab) {
   if (chrome.sidePanel && chrome.sidePanel.open) {
     try { chrome.sidePanel.open({ windowId: tab.windowId }).catch(function() {}); } catch (e) {}
   }
-  chrome.storage.local.get(['credentials', 'config'], function(d) {
-    var cfg = d.config || {};
-    var hasFacility = (cfg.facilities && cfg.facilities.length) || cfg.facilityId;
-    var ready = d.credentials && d.credentials.email && d.credentials.password &&
-                hasFacility && cfg.dateFrom && cfg.dateTo;
-    if (ready) {
-      startMonitoring(cfg);
+  openCleanLoginPage('Opened via icon');
+});
+
+// Open/reuse ONE tab → blank → clear visa data → load the login page. Does not
+// start monitoring or log in by itself.
+function openCleanLoginPage(reason) {
+  addLog((reason || 'Opening login') + '...');
+  chrome.storage.local.set({
+    loginInProgress: false,
+    loginClearInProgress: true,
+    sessionCleared: false,
+    freshLoginTabId: null
+  });
+
+  var runInTab = function(tabId) {
+    chrome.tabs.update(tabId, { url: 'about:blank', active: true }, function() {
+      addLog('Clearing visa cookies & data...');
+      clearVisaSiteData().then(function() {
+        chrome.storage.local.set({
+          sessionCleared: true,
+          loginClearInProgress: false,
+          freshLoginTabId: tabId
+        }, function() {
+          chrome.tabs.update(tabId, { url: LOGIN_URL, active: true });
+          chrome.storage.local.get(['monitoring'], function(d) {
+            if (!d.monitoring) addLog('Login page ready. Press START to log in & monitor.');
+          });
+        });
+      });
+    });
+  };
+
+  chrome.tabs.query({ url: 'https://ais.usvisa-info.com/*' }, function(tabs) {
+    if (tabs && tabs.length) {
+      var keep = tabs[0].id;
+      var extras = tabs.slice(1).map(function(t) { return t.id; });
+      if (extras.length) chrome.tabs.remove(extras);
+      runInTab(keep);
     } else {
-      addLog('Enter email/password, facility and date range in the panel, then click the icon to start.');
+      chrome.tabs.create({ url: 'about:blank', active: true }, function(t) {
+        if (chrome.runtime.lastError || !t || !t.id) {
+          addLog('Tab create error.');
+          chrome.storage.local.set({ loginClearInProgress: false });
+          return;
+        }
+        runInTab(t.id);
+      });
     }
   });
-});
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get(['credentials', 'config', 'schedule', 'telegram', 'notifications'], (existing) => {
