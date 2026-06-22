@@ -12,6 +12,23 @@ Works on **Windows and macOS**, in any Chromium browser (Chrome, Edge, Brave).
 
 ---
 
+## 🔒 Privacy & Trust
+
+**We never steal your login credentials. This is trusted software.**
+
+- Your **email and password are stored only on your own computer** (in the
+  browser's local extension storage) — they are **never** sent to us or any
+  third‑party server.
+- Your credentials are used for **one purpose only**: to log in to the official
+  visa website (`ais.usvisa-info.com`), exactly as you would yourself.
+- The only network requests the extension makes are to the **visa website** and,
+  *if you choose to enable it*, to **your own Telegram bot** for alerts (which
+  receives slot notifications — never your password).
+- The full source code is **open and public in this repository** — you can read
+  exactly what it does.
+
+---
+
 ## 1. Install the extension
 
 1. Download the code:
