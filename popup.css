@@ -5,11 +5,11 @@
 }
 
 body {
-  width: 340px;
+  width: 320px;
   background: #1e1e2e;
   color: #cdd6f4;
   font-family: 'Segoe UI', sans-serif;
-  font-size: 13px;
+  font-size: 11px;
   overflow: hidden;
 }
 
@@ -87,8 +87,8 @@ body {
 
 .brand-logo {
   display: inline-block;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   /* Tint the logo to the START-button green using the image as a mask. */
   background-color: #a6e3a1;
   -webkit-mask: url(icons/icon48.png) center / contain no-repeat;
@@ -96,7 +96,7 @@ body {
 }
 
 h1 {
-  font-size: 14px;
+  font-size: 13px;
   color: #89b4fa;
   text-align: center;
   margin-bottom: 0;
@@ -339,11 +339,11 @@ select:focus, input:focus {
 
 .btn {
   flex: 1;
-  padding: 10px;
+  padding: 8px;
   border: none;
-  border-radius: 8px;
+  border-radius: 7px;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   letter-spacing: 0.5px;
 }
