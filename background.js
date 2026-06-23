@@ -678,7 +678,13 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 function scheduleNext() {
-  chrome.storage.local.get(['config'], (data) => {
+  chrome.storage.local.get(['config', 'monitoring'], (data) => {
+    // Stopped? Don't schedule anything (e.g. a late check that finished after STOP).
+    if (!data.monitoring) {
+      chrome.alarms.clear('check-slots');
+      chrome.alarms.clear('keep-alive');
+      return;
+    }
     const cfg = data.config || {};
     // Interval is configured in SECONDS now.
     const lo = cfg.intervalMin || 60;
@@ -822,29 +828,37 @@ function triggerCheck() {
 }
 
 function handleCheckComplete(data) {
-  chrome.storage.local.get(['stats'], (stored) => {
+  chrome.storage.local.get(['stats', 'monitoring'], (stored) => {
+    // If STOP was pressed while this check was finishing, ignore the late
+    // result entirely — don't update stats, re-login, or reschedule.
+    if (!stored.monitoring) {
+      addLog('Check finished after STOP — ignored.');
+      chrome.alarms.clear('check-slots');
+      chrome.alarms.clear('keep-alive');
+      return;
+    }
+
     const stats = stored.stats || { checks: 0, slotsFound: 0 };
     stats.checks++;
     stats.lastCheck = new Date().toISOString();
     if (data.found) stats.slotsFound += data.found;
     chrome.storage.local.set({ stats });
+
+    // Session expired → auto re-login
+    if (data.currentPage === 'login') {
+      openFreshLoginSession('Session expired');
+      return;
+    }
+
+    // Rate limited → the RATE_LIMITED handler already set a 30-min backoff alarm.
+    // Do NOT reschedule here, or we'd overwrite that pause with a shorter one.
+    if (data.currentPage === 'rate-limited') {
+      chrome.alarms.clear('keep-alive');
+      return;
+    }
+
+    scheduleNext();
   });
-
-  // Session expired → auto re-login
-  if (data.currentPage === 'login') {
-    openFreshLoginSession('Session expired');
-    return;
-  }
-
-  // Rate limited → the RATE_LIMITED handler already set a 30-min backoff alarm.
-  // Do NOT reschedule here, or we'd overwrite that pause with a 10-20 min one
-  // and keep hammering the server (ban risk).
-  if (data.currentPage === 'rate-limited') {
-    chrome.alarms.clear('keep-alive');
-    return;
-  }
-
-  scheduleNext();
 }
 
 // ==================== SLOT / BOOKING ====================
