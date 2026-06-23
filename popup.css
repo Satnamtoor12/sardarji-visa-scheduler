@@ -60,7 +60,7 @@ body {
 
 /* ===== COMMON ===== */
 .container {
-  padding: 16px;
+  padding: 10px;
 }
 
 .brand {
@@ -108,9 +108,9 @@ h1 {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 8px;
   font-weight: 600;
   font-size: 12px;
 }
@@ -139,8 +139,8 @@ h1 {
   background: #181825;
   border: 1px solid #313244;
   border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 10px;
+  padding: 8px;
+  margin-bottom: 6px;
 }
 
 .section-header {
@@ -149,18 +149,18 @@ h1 {
   color: #89b4fa;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .section {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 label {
   display: block;
   font-size: 11px;
   color: #a6adc8;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   font-weight: 500;
 }
 
@@ -172,7 +172,7 @@ input[type="password"],
 input[type="number"],
 input[type="time"] {
   width: 100%;
-  padding: 7px 10px;
+  padding: 6px 8px;
   background: #313244;
   border: 1px solid #45475a;
   border-radius: 6px;
