@@ -696,94 +696,143 @@
       log('Filling booking form...');
       waitForEl('#appointments_consulate_appointment_facility_id', 10000)
         .then(() => fillBookingForm(state))
-        .catch(() => setTimeout(() => fillBookingForm(state), 3000));
+        .catch(() => fillBookingForm(state));   // try anyway if selector differs
     }
     else if (state.step === 'confirm') {
-      log('Confirming...');
-      setTimeout(() => clickConfirm(state), 1500 + Math.random() * 1000);
+      log('Confirming booking...');
+      clickConfirm(state);   // waits for the confirm button itself
     }
     else if (state.step === 'done') {
       chrome.storage.local.remove('bookingState');
     }
   }
 
+  // Abandon the current booking and let monitoring keep looking for slots.
+  function abortBooking(reason) {
+    log('Booking aborted: ' + reason);
+    chrome.storage.local.remove('bookingState');
+    chrome.runtime.sendMessage({ type: 'BOOKING_RESULT', data: { success: false, reason: reason } });
+  }
+
   async function fillBookingForm(state) {
     try {
+      if (aborted) return;
+
+      // 1. Facility dropdown (if present and not already set).
       const facSelect = document.getElementById('appointments_consulate_appointment_facility_id');
-      if (facSelect && facSelect.value !== state.facilityId) {
+      if (facSelect && state.facilityId && facSelect.value !== state.facilityId) {
         facSelect.value = state.facilityId;
         facSelect.dispatchEvent(new Event('change', { bubbles: true }));
-        await delay(2000 + Math.random() * 1500);
+        await delay(1500 + Math.random() * 1000);
       }
 
+      // 2. Open the date picker.
       await waitForEl('#appointments_consulate_appointment_date', 8000);
-      await delay(600 + Math.random() * 600);
-
+      await delay(300 + Math.random() * 300);
+      if (aborted) return;
       const dateInput = document.getElementById('appointments_consulate_appointment_date');
       dateInput.click();
-      await delay(800 + Math.random() * 700);
+      await delay(400 + Math.random() * 400);
 
+      // 3. Navigate to the month and click the day.
       const [yr, mo, dy] = state.date.split('-').map(Number);
       await navigateToMonth(yr, mo - 1);
-      await delay(300 + Math.random() * 300);
+      await delay(200 + Math.random() * 200);
 
       if (!clickDay(dy, yr, mo - 1)) {
-        log('Date ' + state.date + ' gone from calendar.');
-        chrome.storage.local.remove('bookingState');
+        // The date was taken between finding it and booking it — keep monitoring.
+        abortBooking('date ' + state.date + ' no longer in calendar');
         done(0);
         return;
       }
-
       log('Date clicked: ' + state.date);
-      await delay(1500 + Math.random() * 1000);
+      await delay(800 + Math.random() * 600);
+      if (aborted) return;
 
+      // 4. Time dropdown.
       await waitForEl('#appointments_consulate_appointment_time', 8000);
-      await delay(400 + Math.random() * 400);
-
+      await delay(300 + Math.random() * 300);
       const timeSelect = document.getElementById('appointments_consulate_appointment_time');
-      let picked = false;
-      for (const opt of timeSelect.options) {
-        if (opt.value === state.time) { timeSelect.value = state.time; picked = true; break; }
+
+      // Collect real (non-empty) options.
+      const realTimes = Array.from(timeSelect.options).map(o => o.value).filter(Boolean);
+      if (realTimes.length === 0) {
+        // No times left for this date — slot taken. Keep monitoring.
+        abortBooking('no times left for ' + state.date);
+        done(0);
+        return;
       }
-      if (!picked) {
-        for (const opt of timeSelect.options) {
-          if (opt.value) { timeSelect.value = opt.value; state.time = opt.value; break; }
-        }
-      }
+      // Prefer the exact time we found, else the earliest available.
+      const chosen = realTimes.indexOf(state.time) !== -1 ? state.time : realTimes[0];
+      timeSelect.value = chosen;
+      state.time = chosen;
       timeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-      log('Time: ' + state.time);
+      log('Time: ' + chosen);
+      await delay(500 + Math.random() * 500);
+      if (aborted) return;
 
-      await delay(800 + Math.random() * 700);
-
+      // 5. Submit the appointment form.
       chrome.storage.local.set({ bookingState: { ...state, step: 'confirm' } });
-
-      const submitBtn = document.getElementById('appointments_submit');
+      const submitBtn = document.getElementById('appointments_submit') ||
+                        document.querySelector('input[name="commit"], button[name="commit"], input[type="submit"]');
       if (submitBtn) {
         submitBtn.click();
-        log('Submitted. Waiting for confirm page...');
+        log('Submitted booking. Waiting for confirmation...');
+      } else {
+        abortBooking('submit button not found');
       }
 
     } catch (err) {
-      log('Form error: ' + err.message);
-      chrome.storage.local.remove('bookingState');
+      abortBooking('form error: ' + err.message);
     }
   }
 
-  function clickConfirm(state) {
-    const btn = document.querySelector(
-      'a[href*="confirm"], input[value="Confirm"], a.button.alert'
-    );
-    if (btn) {
-      btn.click();
-      log('CONFIRMED! ' + state.date + ' ' + state.time);
-      chrome.storage.local.set({ bookingState: { step: 'done' } });
+  async function clickConfirm(state) {
+    if (aborted) return;
+
+    // usvisa-info asks for a final confirmation — usually a SweetAlert modal
+    // ("You're about to schedule…") with a Confirm button, sometimes a plain
+    // Confirm link/button.
+    let btn = null;
+    try {
+      btn = await waitForEl('.swal2-confirm, a[href*="confirm"], input[value="Confirm"], button[name="commit"], a.button.alert', 8000);
+    } catch (e) { btn = null; }
+
+    if (!btn) {
+      log('Confirm button not found — please confirm manually!');
+      chrome.runtime.sendMessage({
+        type: 'BOOKING_RESULT',
+        data: { success: false, reason: 'confirm button not found', date: state.date, time: state.time, facility: state.facilityName }
+      });
+      chrome.storage.local.remove('bookingState');
+      return;
+    }
+
+    btn.click();
+    log('Clicked Confirm — verifying...');
+    chrome.storage.local.set({ bookingState: { step: 'done' } });
+    await delay(2500 + Math.random() * 1500);
+
+    // Verify: look for clear failure signals; otherwise treat as booked.
+    const body = (document.body && document.body.innerText || '').toLowerCase();
+    const failed =
+      body.includes('no longer available') || body.includes('not available') ||
+      body.includes('could not') || body.includes('try again') ||
+      !!document.querySelector('.alert-danger, .flash-error');
+
+    if (failed) {
+      log('Confirmation failed — slot likely taken. Resuming monitoring.');
+      chrome.storage.local.remove('bookingState');
+      chrome.runtime.sendMessage({
+        type: 'BOOKING_RESULT',
+        data: { success: false, reason: 'slot taken at confirm', date: state.date, time: state.time, facility: state.facilityName }
+      });
+    } else {
+      log('BOOKED! ' + state.date + ' ' + state.time);
       chrome.runtime.sendMessage({
         type: 'BOOKING_RESULT',
         data: { success: true, date: state.date, time: state.time, facility: state.facilityName }
       });
-    } else {
-      log('Confirm button not found. Confirm manually!');
-      chrome.storage.local.remove('bookingState');
     }
   }
 

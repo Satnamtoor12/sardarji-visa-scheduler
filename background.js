@@ -922,10 +922,15 @@ function handleBookingResult(data) {
     addLog('BOOKED: ' + data.date + ' ' + data.time + ' @ ' + data.facility);
     sendTelegram('✅ <b>BOOKED SUCCESSFULLY!</b>\n📅 ' + data.date + ' ' + data.time + '\n🏢 ' + data.facility);
     stopMonitoring();
+    playSound();
   } else {
-    addLog('Booking failed. Check page.');
+    // Booking didn't go through (slot taken, etc.) — keep monitoring for the
+    // next opening instead of stalling.
+    addLog('Booking did not complete (' + (data.reason || 'unknown') + '). Resuming monitoring...');
+    chrome.storage.local.get(['monitoring'], (d) => {
+      if (d.monitoring) scheduleNext();
+    });
   }
-  playSound();
 }
 
 // ==================== UTILS ====================
