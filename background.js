@@ -686,9 +686,12 @@ function scheduleNext() {
       return;
     }
     const cfg = data.config || {};
-    // Interval is configured in SECONDS now.
-    const lo = cfg.intervalMin || 60;
-    const hi = cfg.intervalMax || 120;
+    // Interval is configured in SECONDS. Pick a random value between min and max
+    // so the timing isn't a fixed, robotic pattern.
+    let lo = cfg.intervalMin || 60;
+    let hi = cfg.intervalMax || 120;
+    if (hi < lo) { const t = lo; lo = hi; hi = t; }       // tolerate swapped values
+    if (hi - lo < 10) hi = lo + Math.max(20, lo * 0.25);  // ensure a real spread so every interval differs
     const sec = lo + Math.random() * (hi - lo);
     const minutes = sec / 60;   // chrome.alarms takes minutes
     chrome.alarms.create('check-slots', { delayInMinutes: minutes });
