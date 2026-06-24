@@ -739,6 +739,9 @@
       await navigateToMonth(yr, mo - 1);
       await delay(200 + Math.random() * 200);
 
+      // Cross-check: what dates does the calendar DOM actually show as open?
+      logCalendarDates(yr, mo - 1);
+
       if (!clickDay(dy, yr, mo - 1)) {
         // The date was taken between finding it and booking it — keep monitoring.
         abortBooking('date ' + state.date + ' no longer in calendar');
@@ -1392,34 +1395,68 @@
     }
   }
 
-  // Click a day, scoped to the correct month panel. The datepicker can show
-  // two months at once, so matching by day-number alone could click the same
-  // day in the wrong month. When yr/mo are given, only click inside the panel
-  // whose header matches.
+  const MONTHS = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+
+  // Does this datepicker panel show the given year/month? (handles full or
+  // abbreviated month labels)
+  function panelMatches(scope, yr, mo) {
+    if (yr == null || mo == null) return true;
+    const moEl = scope.querySelector('.ui-datepicker-month');
+    const yrEl = scope.querySelector('.ui-datepicker-year');
+    if (!moEl || !yrEl) return true;
+    const txt = moEl.textContent.trim();
+    let curMo = MONTHS.indexOf(txt);
+    if (curMo < 0) curMo = MONTHS.findIndex(m => m.slice(0, 3) === txt.slice(0, 3));
+    return curMo === mo && parseInt(yrEl.textContent.trim()) === yr;
+  }
+
+  // All clickable (available) day-numbers in a panel. Available days are <a>
+  // links inside cells that are NOT marked unselectable/disabled; blocked days
+  // are plain <span>, so they're naturally excluded.
+  function availableDaysIn(scope) {
+    const links = scope.querySelectorAll(
+      'td:not(.ui-datepicker-unselectable):not(.ui-state-disabled) a'
+    );
+    return Array.from(links)
+      .map(a => parseInt(a.textContent.trim(), 10))
+      .filter(n => !isNaN(n));
+  }
+
+  // Read the available dates straight from the calendar DOM for the target
+  // month, and log them — a cross-check against the JSON the API returned.
+  function logCalendarDates(yr, mo) {
+    const groups = document.querySelectorAll('.ui-datepicker-group');
+    const scopes = groups.length
+      ? Array.from(groups)
+      : [document.querySelector('.ui-datepicker') || document];
+    for (const scope of scopes) {
+      if (panelMatches(scope, yr, mo)) {
+        const days = availableDaysIn(scope);
+        log('Calendar open days (' + (mo + 1) + '/' + yr + '): ' +
+            (days.length ? days.join(', ') : 'none'));
+        return days;
+      }
+    }
+    log('Calendar: target month panel not visible');
+    return [];
+  }
+
+  // Click a day, scoped to the correct month panel (the datepicker can show two
+  // months at once). Only clicks a genuinely available (clickable) day.
   function clickDay(day, yr, mo) {
-    const months = ['January','February','March','April','May','June',
-                    'July','August','September','October','November','December'];
     const groups = document.querySelectorAll('.ui-datepicker-group');
     const scopes = groups.length
       ? Array.from(groups)
       : [document.querySelector('.ui-datepicker') || document];
 
     for (const scope of scopes) {
-      if (yr != null && mo != null) {
-        const moEl = scope.querySelector('.ui-datepicker-month');
-        const yrEl = scope.querySelector('.ui-datepicker-year');
-        if (moEl && yrEl) {
-          let curMo = months.indexOf(moEl.textContent.trim());
-          if (curMo < 0) {
-            curMo = months.findIndex(m => m.slice(0, 3) === moEl.textContent.trim().slice(0, 3));
-          }
-          const curYr = parseInt(yrEl.textContent.trim());
-          if (curMo !== mo || curYr !== yr) continue; // wrong panel, skip
-        }
-      }
-      const links = scope.querySelectorAll('td:not(.ui-datepicker-unselectable) a.ui-state-default');
+      if (!panelMatches(scope, yr, mo)) continue;
+      const links = scope.querySelectorAll(
+        'td:not(.ui-datepicker-unselectable):not(.ui-state-disabled) a'
+      );
       for (const l of links) {
-        if (parseInt(l.textContent.trim()) === day) { l.click(); return true; }
+        if (parseInt(l.textContent.trim(), 10) === day) { l.click(); return true; }
       }
     }
     return false;
