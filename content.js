@@ -574,10 +574,14 @@
           .map(d => d && d.date)
           .filter(d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
           .sort();
+
+        // Log whenever the earliest available date MOVES — this is how you see
+        // cancellations happening (a date opening/closing), even out of range.
+        await noteEarliest(fac.id, fac.name, allDates[0] || null);
+
         const matching = allDates.filter(d => d >= config.dateFrom && d <= config.dateTo);
 
         if (matching.length === 0) {
-          log(fac.name + ': Earliest ' + (allDates[0] || 'none') + ' (out of range)');
           await delay(1500 + Math.random() * 2000);
           continue;
         }
@@ -929,6 +933,24 @@
   function getCSRF() {
     const el = document.querySelector('meta[name="csrf-token"]');
     return el ? el.getAttribute('content') : '';
+  }
+
+  // Log when a facility's earliest available date changes, so cancellation
+  // movement is visible in the log (e.g. "Toronto: Earliest 2027-10-26 -> 2027-09-15").
+  // Stays quiet when nothing changed, to avoid log spam.
+  async function noteEarliest(facId, facName, earliest) {
+    try {
+      const store = await chrome.storage.local.get(['lastEarliest']);
+      const map = store.lastEarliest || {};
+      const prev = map[facId];
+      if (earliest !== prev) {
+        if (!earliest) log(facName + ': no dates open now (was ' + prev + ')');
+        else if (!prev) log(facName + ': earliest ' + earliest);
+        else log(facName + ': earliest ' + prev + ' -> ' + earliest + ' (changed)');
+        map[facId] = earliest || null;
+        await chrome.storage.local.set({ lastEarliest: map });
+      }
+    } catch (e) { /* ignore */ }
   }
 
   // Fetch the actual bookable times for a given date. Returns [] on any error
