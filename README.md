@@ -102,24 +102,6 @@ wrong or a CAPTCHA appears, it stops and tells you (no pointless retries).
 | `sidebar.*`      | Side panel UI                                             |
 | `options.*`      | Settings page                                             |
 | `offscreen.html` | Plays the alert sound                                     |
-| `native_host/`   | **Legacy, unused** (see below)                            |
-
----
-
-## Legacy
-
-The `native_host/` folder (Python scripts + installers) was from an earlier
-version that drove the **real OS mouse/keyboard**. That approach was dropped
-because:
-
-- the page→screen coordinate mapping was unreliable (side panel / display
-  scaling) — the cursor landed in empty areas, and
-- OS keystrokes could go to the wrong window (e.g. the address bar), which risked
-  leaking the password.
-
-The extension now uses **synthetic input** that acts directly on the correct
-page element — reliable, faster, and self-contained. You can ignore or delete the
-`native_host/` folder; it is not required.
 
 ---
 

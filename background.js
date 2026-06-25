@@ -161,80 +161,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       addLog(msg.text);
       sendResponse({ ok: true });
       break;
-    case 'NATIVE_MOUSE':
-      sendNativeMouse(msg.cmd, msg.payload, sendResponse);
-      return true;
     default:
       sendResponse({ ok: false });
   }
   return false;
 });
-
-// ==================== NATIVE MOUSE BRIDGE ====================
-// Communicates with Python native host that controls real OS cursor.
-// Native host must be installed via native_host/install.bat
-
-var nativePort = null;
-var nativeQueue = [];
-var nativeReady = false;
-
-function connectNative() {
-  if (nativePort) return;
-  try {
-    nativePort = chrome.runtime.connectNative('com.sardarji.visa_helper');
-    nativePort.onMessage.addListener((response) => {
-      if (response.type === 'ready') {
-        nativeReady = true;
-        addLog('Native mouse host ready (screen ' + response.screen[0] + 'x' + response.screen[1] + ')');
-        // Flush queue
-        while (nativeQueue.length > 0) {
-          const item = nativeQueue.shift();
-          item.callback(response);
-        }
-        return;
-      }
-      // Match with oldest queued request
-      if (nativeQueue.length > 0) {
-        const item = nativeQueue.shift();
-        item.callback(response);
-      }
-    });
-    nativePort.onDisconnect.addListener(() => {
-      const err = chrome.runtime.lastError ? chrome.runtime.lastError.message : 'disconnected';
-      addLog('Native host disconnected: ' + err);
-      nativePort = null;
-      nativeReady = false;
-      // Reject pending
-      while (nativeQueue.length > 0) {
-        const item = nativeQueue.shift();
-        item.callback({ ok: false, error: 'native_disconnected' });
-      }
-    });
-  } catch (e) {
-    addLog('Native connect failed: ' + e.message);
-    nativePort = null;
-  }
-}
-
-function sendNativeMouse(cmd, payload, callback) {
-  if (!nativePort) connectNative();
-  if (!nativePort) {
-    callback({ ok: false, error: 'no_native_host' });
-    return;
-  }
-  const msg = Object.assign({ cmd: cmd }, payload || {});
-  nativeQueue.push({ callback: callback });
-  try {
-    nativePort.postMessage(msg);
-  } catch (e) {
-    addLog('Native send failed: ' + e.message);
-    nativeQueue.pop();
-    callback({ ok: false, error: e.message });
-  }
-}
-
-// Auto-connect on startup
-connectNative();
 
 // ==================== START FLOW ====================
 

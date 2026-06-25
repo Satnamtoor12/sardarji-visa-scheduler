@@ -13,7 +13,6 @@
     "activeTab",
     "browsingData",
     "cookies",
-    "nativeMessaging",
     "sidePanel"
   ],
   "host_permissions": [
