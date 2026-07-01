@@ -864,7 +864,25 @@ function handleBookingResult(data) {
       requireInteraction: true
     });
     addLog('BOOKED: ' + data.date + ' ' + data.time + ' @ ' + data.facility);
-    sendTelegram('✅ <b>BOOKED SUCCESSFULLY!</b>\n📅 ' + data.date + ' ' + data.time + '\n🏢 ' + data.facility);
+
+    chrome.storage.local.get(['config', 'credentials'], (d) => {
+      const cfg = d.config || {};
+      const email = (d.credentials && d.credentials.email) || '';
+      sendTelegram(
+        '🎉 <b>APPOINTMENT BOOKED!</b>\n' +
+        '📅 Date: ' + data.date + '\n' +
+        '⏰ Time: ' + data.time + '\n' +
+        '🏢 Facility: ' + data.facility +
+        (email ? '\n👤 Account: ' + email : '') +
+        (cfg.scheduleId ? '\n🔖 Schedule ID: ' + cfg.scheduleId : '') +
+        '\n✅ Monitoring stopped.'
+      );
+    });
+
+    const lastBooking = { date: data.date, time: data.time, facility: data.facility, ts: Date.now() };
+    chrome.storage.local.set({ lastBooking });
+    chrome.runtime.sendMessage({ type: 'BOOKING_CONFIRMED', data: lastBooking }, () => void chrome.runtime.lastError);
+
     stopMonitoring();
     playSound();
   } else {

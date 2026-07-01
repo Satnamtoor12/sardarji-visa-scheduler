@@ -88,6 +88,57 @@ h1 {
   50% { opacity: 0.4; }
 }
 
+/* Booking celebration */
+.celebration {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(135deg, #1e3a2f, #143524);
+  border: 1px solid #a6e3a1;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  animation: celebrate-in 0.25s ease-out;
+}
+
+@keyframes celebrate-in {
+  from { transform: scale(0.92); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.celebration-emoji {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.celebration-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.celebration-title {
+  font-weight: 700;
+  font-size: 12px;
+  color: #a6e3a1;
+}
+
+.bc-details {
+  font-size: 11px;
+  color: #cdd6f4;
+  margin-top: 2px;
+  word-break: break-word;
+}
+
+.celebration-close {
+  cursor: pointer;
+  color: #a6adc8;
+  font-size: 14px;
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+
+.celebration-close:hover { color: #f38ba8; }
+
 /* Section groups */
 .section-group {
   background: #181825;
@@ -367,6 +418,10 @@ select:focus, input:focus {
   border-color: #89b4fa;
 }
 
+.log-wrap {
+  position: relative;
+}
+
 .log-box {
   background: #181825;
   border: 1px solid #313244;
@@ -379,6 +434,24 @@ select:focus, input:focus {
   color: #a6adc8;
   line-height: 1.4;
 }
+
+.jump-bottom {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: #89b4fa;
+  color: #1e1e2e;
+  border: none;
+  border-radius: 12px;
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  font-family: inherit;
+}
+
+.jump-bottom:hover { background: #74a8f7; }
 
 .log-box::-webkit-scrollbar,
 body::-webkit-scrollbar { width: 6px; }

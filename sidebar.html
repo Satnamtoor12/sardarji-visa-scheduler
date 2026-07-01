@@ -17,6 +17,16 @@
       <span id="status-text">Idle</span>
     </div>
 
+    <!-- Booking celebration -->
+    <div id="bookingCelebration" class="celebration" style="display:none">
+      <div class="celebration-emoji">🎉</div>
+      <div class="celebration-text">
+        <div class="celebration-title">Congratulations! Slot Booked</div>
+        <div class="bc-details"></div>
+      </div>
+      <span id="closeCelebration" class="celebration-close" title="Dismiss">✕</span>
+    </div>
+
     <!-- Account section -->
     <div class="section-group">
       <div class="section-header">Account</div>
@@ -189,7 +199,10 @@
         <label>Activity Log</label>
         <span id="copyLog" class="copy-btn" title="Copy">📋 Copy</span>
       </div>
-      <div id="logBox" class="log-box"></div>
+      <div class="log-wrap">
+        <div id="logBox" class="log-box"></div>
+        <button id="jumpToBottom" class="jump-bottom" style="display:none" title="Jump to latest">↓ New logs</button>
+      </div>
     </div>
 
     <div class="disclaimer">

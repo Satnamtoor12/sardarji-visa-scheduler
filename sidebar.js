@@ -23,9 +23,50 @@ function init() {
   wireStartButton();
   wireStopButton();
   wireIntervalHints();
+  wireBookingCelebration();
+  wireJumpToBottom();
   setDateDefaults();
   loadSavedData();
   startAutoRefresh();
+}
+
+// ===== Booking celebration banner =====
+// Only auto-shown for a RECENT booking (avoids surfacing a stale one from
+// days ago just because the sidebar was reopened). A live push from the
+// background script (BOOKING_CONFIRMED) always shows immediately regardless.
+var BOOKING_CELEBRATION_WINDOW_MS = 5 * 60 * 1000;
+var lastShownBookingTs = 0;
+
+function wireBookingCelebration() {
+  var closeBtn = $('closeCelebration');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', function() {
+      var el = $('bookingCelebration');
+      if (el) el.style.display = 'none';
+    });
+  }
+
+  chrome.runtime.onMessage.addListener(function(msg) {
+    if (msg && msg.type === 'BOOKING_CONFIRMED' && msg.data) {
+      lastShownBookingTs = msg.data.ts || Date.now();
+      showBookingCelebration(msg.data);
+    }
+  });
+}
+
+function showBookingCelebration(b) {
+  var el = $('bookingCelebration');
+  var details = $('bookingCelebration') && document.querySelector('#bookingCelebration .bc-details');
+  if (!el || !details) return;
+  details.textContent = (b.date || '') + ' ' + (b.time || '') + ' — ' + (b.facility || '');
+  el.style.display = 'flex';
+}
+
+function maybeShowBookingCelebration(lastBooking) {
+  if (!lastBooking || lastBooking.ts === lastShownBookingTs) return;
+  if (Date.now() - lastBooking.ts > BOOKING_CELEBRATION_WINDOW_MS) return;
+  lastShownBookingTs = lastBooking.ts;
+  showBookingCelebration(lastBooking);
 }
 
 // Live "= X min" hint next to the seconds inputs, updates as you type.
@@ -227,6 +268,11 @@ function wireStartButton() {
     if (dateFrom > dateTo) { alert('From date must be before To date'); return; }
     // No lower limit — fractional minutes allowed.
 
+    // Starting a fresh search — hide any leftover celebration from a prior run.
+    var celebration = $('bookingCelebration');
+    if (celebration) celebration.style.display = 'none';
+    chrome.storage.local.remove('lastBooking');
+
     chrome.storage.local.set({
       credentials: { email: email, password: password }
     });
@@ -289,7 +335,7 @@ function setDateDefaults() {
 // ===== Load saved data =====
 function loadSavedData() {
   chrome.storage.local.get(
-    ['monitoring', 'config', 'stats', 'log', 'credentials', 'schedule', 'telegram', 'notifications'],
+    ['monitoring', 'config', 'stats', 'log', 'credentials', 'schedule', 'telegram', 'notifications', 'lastBooking'],
     function(data) {
       if (data.credentials) {
         if ($('email')) $('email').value = data.credentials.email || '';
@@ -345,6 +391,7 @@ function loadSavedData() {
       updateStatus(data.monitoring);
       updateStats(data.stats);
       updateLog(data.log);
+      maybeShowBookingCelebration(data.lastBooking);
     }
   );
 }
@@ -383,7 +430,16 @@ function updateStats(stats) {
 
 function updateLog(log) {
   var box = $('logBox');
+  var jumpBtn = $('jumpToBottom');
   if (!log || !box) return;
+
+  // Only auto-scroll to the bottom if the user was already at (or near) the
+  // bottom. If they scrolled up to read older entries, leave them where they
+  // are instead of yanking the view back down on every refresh — but show a
+  // "jump to latest" button since new logs are still landing below.
+  var wasAtBottom = box.scrollHeight - box.scrollTop - box.clientHeight <= 4;
+  var prevScrollTop = box.scrollTop;
+
   var html = '';
   for (var i = 0; i < log.length; i++) {
     var d = document.createElement('div');
@@ -391,16 +447,42 @@ function updateLog(log) {
     html += '<div>' + d.innerHTML + '</div>';
   }
   box.innerHTML = html;
-  box.scrollTop = box.scrollHeight;
+
+  if (wasAtBottom) {
+    box.scrollTop = box.scrollHeight;
+    if (jumpBtn) jumpBtn.style.display = 'none';
+  } else {
+    box.scrollTop = prevScrollTop;
+    if (jumpBtn) jumpBtn.style.display = 'block';
+  }
+}
+
+// ===== Jump-to-latest button on the log box =====
+function wireJumpToBottom() {
+  var btn = $('jumpToBottom');
+  var box = $('logBox');
+  if (!btn || !box) return;
+
+  btn.addEventListener('click', function() {
+    box.scrollTop = box.scrollHeight;
+    btn.style.display = 'none';
+  });
+
+  // Manually scrolling back to the bottom also dismisses the button.
+  box.addEventListener('scroll', function() {
+    var atBottom = box.scrollHeight - box.scrollTop - box.clientHeight <= 4;
+    if (atBottom) btn.style.display = 'none';
+  });
 }
 
 // ===== Auto refresh =====
 function startAutoRefresh() {
   setInterval(function() {
-    chrome.storage.local.get(['monitoring', 'stats', 'log'], function(data) {
+    chrome.storage.local.get(['monitoring', 'stats', 'log', 'lastBooking'], function(data) {
       updateStatus(data.monitoring);
       updateStats(data.stats);
       updateLog(data.log);
+      maybeShowBookingCelebration(data.lastBooking);
     });
   }, 3000);
 }

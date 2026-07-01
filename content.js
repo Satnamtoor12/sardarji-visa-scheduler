@@ -707,7 +707,11 @@
       clickConfirm(state);   // waits for the confirm button itself
     }
     else if (state.step === 'done') {
-      chrome.storage.local.remove('bookingState');
+      // Confirm was clicked on the previous page and navigation destroyed that
+      // script before it could verify/report — do it here, on whichever page
+      // we landed on, using the details carried over in bookingState.
+      log('Verifying booking result on new page...');
+      delay(400 + Math.random() * 400).then(() => finalizeBooking(state));
     }
   }
 
@@ -806,30 +810,63 @@
     } catch (e) { btn = null; }
 
     if (!btn) {
+      // No confirm button found — could genuinely be stuck, or the site may
+      // have already booked without one. Check for a positive signal first
+      // instead of assuming failure (which would wrongly resume monitoring).
+      if (pageIndicatesBooked()) {
+        log('No confirm button, but page shows the booking succeeded.');
+        await finalizeBooking(state);
+        return;
+      }
       log('Confirm button not found — please confirm manually!');
+      chrome.storage.local.remove('bookingState');
       chrome.runtime.sendMessage({
         type: 'BOOKING_RESULT',
         data: { success: false, reason: 'confirm button not found', date: state.date, time: state.time, facility: state.facilityName }
       });
-      chrome.storage.local.remove('bookingState');
       return;
     }
 
+    // Save full details BEFORE clicking — the click likely navigates the page
+    // (real form submit), which destroys this script mid-flight before it can
+    // verify/report. If that happens, the next page load's
+    // handleBookingContinuation (step 'done') picks up right here with the
+    // same date/time/facility instead of losing them.
+    chrome.storage.local.set({ bookingState: { ...state, step: 'done' } });
     btn.click();
     log('Clicked Confirm — verifying...');
-    chrome.storage.local.set({ bookingState: { step: 'done' } });
     await delay(2500 + Math.random() * 1500);
+    if (aborted) return;
 
-    // Verify: look for clear failure signals; otherwise treat as booked.
+    // Still here → the click didn't navigate away. Verify on this same page.
+    await finalizeBooking(state);
+  }
+
+  // A page-level positive signal that the appointment was actually scheduled
+  // (used to avoid false "failed" reports when failure-keyword matching alone
+  // is ambiguous, or when no confirm button exists because it already booked).
+  function pageIndicatesBooked() {
+    const body = (document.body && document.body.innerText || '').toLowerCase();
+    return body.includes('has been scheduled') || body.includes('successfully scheduled') ||
+           body.includes('confirmation number') || body.includes('appointment confirmation') ||
+           body.includes('you have successfully');
+  }
+
+  // Verify the booking result on whatever page we're currently on and report
+  // it exactly once. Clears bookingState first so a stray extra page load
+  // can't re-report the same result.
+  async function finalizeBooking(state) {
+    chrome.storage.local.remove('bookingState');
+
     const body = (document.body && document.body.innerText || '').toLowerCase();
     const failed =
-      body.includes('no longer available') || body.includes('not available') ||
-      body.includes('could not') || body.includes('try again') ||
-      !!document.querySelector('.alert-danger, .flash-error');
+      (body.includes('no longer available') || body.includes('not available') ||
+       body.includes('could not') || body.includes('try again') ||
+       !!document.querySelector('.alert-danger, .flash-error')) &&
+      !pageIndicatesBooked();
 
     if (failed) {
       log('Confirmation failed — slot likely taken. Resuming monitoring.');
-      chrome.storage.local.remove('bookingState');
       chrome.runtime.sendMessage({
         type: 'BOOKING_RESULT',
         data: { success: false, reason: 'slot taken at confirm', date: state.date, time: state.time, facility: state.facilityName }
