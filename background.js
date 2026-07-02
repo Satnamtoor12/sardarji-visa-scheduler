@@ -121,7 +121,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: true });
       break;
     case 'STOP_MONITORING':
-      chrome.storage.local.remove('pausedState');
+      chrome.storage.local.remove(['pausedState', 'manualSessionMode']);
       stopMonitoring();
       sendResponse({ ok: true });
       break;
@@ -256,7 +256,8 @@ function startMonitoring(config) {
       loginAttempts: 0,
       loginClearInProgress: false,
       loginInProgress: false,
-      pausedState: null
+      pausedState: null,
+      manualSessionMode: false
     });
     if (config.mode === 'reschedule') {
       addLog('Reschedule mode: ' + config.facilityName + ' — hunting dates BEFORE ' +
@@ -297,7 +298,12 @@ function startMonitoring(config) {
 // When the login page loads, handlePageReady sees the cleaned fresh tab and
 // auto-submits. No double-clearing, no tab flashing.
 function openFreshLoginSession(reason) {
-  chrome.storage.local.get(['loginClearInProgress', 'loginInProgress', 'credentials'], (data) => {
+  chrome.storage.local.get(['loginClearInProgress', 'loginInProgress', 'credentials', 'manualSessionMode'], (data) => {
+    if (data.manualSessionMode) {
+      addLog('Manual login mode — cookies kept. Log in yourself, then press Resume.');
+      pauseForManualLogin('awaiting-manual-login');
+      return;
+    }
     if (data.loginClearInProgress || data.loginInProgress) {
       addLog('Login already starting; ignoring duplicate trigger');
       return;
@@ -414,7 +420,11 @@ function handlePageReady(msg, sender) {
 
     if (msg.page === 'login') {
       addLog('On login page.');
-      chrome.storage.local.get(['credentials', 'sessionCleared', 'loginClearInProgress', 'loginInProgress', 'freshLoginTabId'], (d) => {
+      chrome.storage.local.get(['credentials', 'sessionCleared', 'loginClearInProgress', 'loginInProgress', 'freshLoginTabId', 'manualSessionMode'], (d) => {
+        if (d.manualSessionMode) {
+          addLog('Manual login mode — complete login yourself, then press Resume.');
+          return;
+        }
         // Back on the login page while an attempt was in progress = that attempt
         // failed (submit returned us to login). The content script that
         // submitted was torn down on navigation, so the result is detected here
@@ -548,9 +558,10 @@ function handleLoginFailed(reason) {
     if (r.includes('captcha')) {
       chrome.storage.local.get(['config'], (d) => {
         chrome.storage.local.set({
-          pausedState: { reason: 'captcha', config: d.config || null, at: Date.now() }
+          pausedState: { reason: 'captcha', config: d.config || null, at: Date.now() },
+          manualSessionMode: true
         }, () => {
-          addLog('CAPTCHA on login page — log in manually in the visa tab, then press Resume.');
+          addLog('CAPTCHA — log in manually (cookies kept). Press Resume when done.');
           sendTelegram('🔴 <b>CAPTCHA blocked login</b>\n' + msg + '\nLog in manually, then press Resume in the sidebar.');
           stopMonitoring();
         });
@@ -600,6 +611,66 @@ function beginMonitoringLoop() {
   triggerCheck();
 }
 
+function pauseForManualLogin(detail) {
+  chrome.storage.local.get(['config'], (d) => {
+    chrome.storage.local.set({
+      monitoring: false,
+      manualSessionMode: true,
+      loginInProgress: false,
+      loginClearInProgress: false,
+      pausedState: {
+        reason: 'captcha',
+        config: d.config || null,
+        at: Date.now(),
+        detail: detail || null
+      }
+    });
+  });
+}
+
+function resumeAfterManualLogin() {
+  chrome.tabs.query({ url: 'https://ais.usvisa-info.com/*' }, (tabs) => {
+    if (!tabs.length) {
+      addLog('No visa tab — open ais.usvisa-info.com, log in manually, then Resume.');
+      pauseForManualLogin('no-tab');
+      return;
+    }
+
+    const tab = tabs[0];
+    chrome.tabs.sendMessage(tab.id, { type: 'WHAT_PAGE' }, (resp) => {
+      if (chrome.runtime.lastError) {
+        addLog('Visa tab not ready — reload the page, log in, then Resume.');
+        pauseForManualLogin('tab-not-ready');
+        return;
+      }
+
+      if (resp && resp.page === 'login') {
+        addLog('Still on login page — finish manual login, then Resume again.');
+        pauseForManualLogin('still-on-login');
+        return;
+      }
+
+      const loggedIn = resp &&
+        ['logged-in', 'appointment', 'groups', 'continue-actions'].includes(resp.page);
+      if (loggedIn) {
+        chrome.storage.local.set({ manualSessionMode: false, pausedState: null }, () => {
+          addLog('Manual login OK — checking slots (cookies not cleared).');
+          chrome.tabs.sendMessage(tab.id, { type: 'DO_CHECK' }, (r) => {
+            if (chrome.runtime.lastError) {
+              addLog('Check failed: ' + chrome.runtime.lastError.message);
+              scheduleNext();
+            }
+          });
+        });
+        return;
+      }
+
+      addLog('Not logged in yet — open your appointment area, log in, then Resume.');
+      pauseForManualLogin('unknown-page');
+    });
+  });
+}
+
 function resumeMonitoring() {
   chrome.storage.local.get(['pausedState', 'credentials'], (d) => {
     const ps = d.pausedState;
@@ -615,13 +686,15 @@ function resumeMonitoring() {
       monitoring: true,
       config: ps.config,
       pausedState: null,
+      manualSessionMode: true,
       loginInProgress: false,
       loginClearInProgress: false,
       loginAttempts: 0,
-      loginPagePrepared: false
+      loginPagePrepared: false,
+      sessionCleared: false
     }, () => {
-      addLog('Resumed monitoring (session kept — no cookie clear).');
-      beginMonitoringLoop();
+      addLog('Resume requested — will NOT clear cookies.');
+      resumeAfterManualLogin();
     });
   });
 }
@@ -768,8 +841,13 @@ function isInActiveWindow() {
 }
 
 function triggerCheck() {
-  chrome.storage.local.get(['monitoring'], async (data) => {
+  chrome.storage.local.get(['monitoring', 'manualSessionMode'], async (data) => {
     if (!data.monitoring) return;
+
+    if (data.manualSessionMode) {
+      resumeAfterManualLogin();
+      return;
+    }
 
     const active = await isInActiveWindow();
     if (!active) {
@@ -825,7 +903,7 @@ function triggerCheck() {
 }
 
 function handleCheckComplete(data) {
-  chrome.storage.local.get(['stats', 'monitoring'], (stored) => {
+  chrome.storage.local.get(['stats', 'monitoring', 'manualSessionMode'], (stored) => {
     // If STOP was pressed while this check was finishing, ignore the late
     // result entirely — don't update stats, re-login, or reschedule.
     if (!stored.monitoring) {
@@ -841,8 +919,13 @@ function handleCheckComplete(data) {
     if (data.found) stats.slotsFound += data.found;
     chrome.storage.local.set({ stats });
 
-    // Session expired → auto re-login
+    // Session expired → auto re-login (skip cookie clear during manual-login resume)
     if (data.currentPage === 'login') {
+      if (stored.manualSessionMode) {
+        addLog('Session not ready — log in manually, then Resume.');
+        pauseForManualLogin('check-saw-login');
+        return;
+      }
       openFreshLoginSession('Session expired');
       return;
     }

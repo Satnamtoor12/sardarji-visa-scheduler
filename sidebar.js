@@ -330,9 +330,9 @@ function wireResumeCaptcha() {
     btn.disabled = true;
     btn.textContent = 'Resuming...';
     chrome.runtime.sendMessage({ type: 'RESUME_MONITORING' }, function() {
-      chrome.storage.local.get(['monitoring', 'config'], function(d) {
+      chrome.storage.local.get(['monitoring', 'config', 'pausedState'], function(d) {
         updateStatus(d.monitoring, d.config);
-        updateCaptchaBanner(null);
+        updateCaptchaBanner(d.pausedState);
         btn.disabled = false;
         btn.textContent = 'RESUME MONITORING';
       });
