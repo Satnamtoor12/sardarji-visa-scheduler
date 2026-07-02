@@ -28,13 +28,6 @@ function delay(ms) {
   return new Promise(function(resolve) { setTimeout(resolve, ms); });
 }
 
-function notifyUpdaterStatus(state, detail) {
-  chrome.runtime.sendMessage(
-    { type: 'UPDATER_STATUS', state: state, detail: detail || '' },
-    function() { void chrome.runtime.lastError; }
-  );
-}
-
 function fetchRemoteVersion() {
   return fetch(GITHUB_MANIFEST_URL, { cache: 'no-store' })
     .then(function(r) {
@@ -180,7 +173,6 @@ function ensureNativeHostReady() {
     return shouldRetryBootstrap().then(function(canRetry) {
       if (!canRetry) return false;
 
-      notifyUpdaterStatus('bootstrapping', 'Setting up auto-update...');
       if (typeof addLog === 'function') {
         addLog('Setting up GitHub auto-update...');
       }
@@ -199,7 +191,6 @@ function applyNativeSyncResult(native, localVersion, needsUpdate) {
 
   var r = native.resp || {};
   if (r.success && (r.changed || needsUpdate)) {
-    notifyUpdaterStatus('updating', r.version ? 'v' + r.version : '');
     if (typeof addLog === 'function') {
       addLog('GitHub update applied' + (r.version ? ' (v' + r.version + ')' : '') + ' — reloading...');
     }
@@ -208,7 +199,6 @@ function applyNativeSyncResult(native, localVersion, needsUpdate) {
   }
 
   if (r.success) {
-    notifyUpdaterStatus('ready', 'v' + localVersion);
     if (typeof addLog === 'function') {
       addLog('Extension up to date (v' + localVersion + ').');
     }
@@ -222,8 +212,6 @@ function tryAutoUpdateFromGitHub() {
     if (skip) return false;
 
     var localVersion = chrome.runtime.getManifest().version;
-    notifyUpdaterStatus('checking', 'v' + localVersion);
-
     return fetchRemoteVersion()
       .then(function(remoteVersion) {
         markUpdateCheckDone();
@@ -238,7 +226,6 @@ function tryAutoUpdateFromGitHub() {
       })
       .catch(function(err) {
         markUpdateCheckDone();
-        notifyUpdaterStatus('idle', '');
         if (typeof addLog === 'function') {
           addLog('Update check failed: ' + (err && err.message ? err.message : 'network error'));
         }

@@ -35,7 +35,6 @@ function init() {
   wireTabs();
   wireFetchBooked();
   wireBookedDateListener();
-  wireUpdaterStatus();
   wireAdvancedToggle();
   wireConditionalFields();
   wirePasswordToggle();
@@ -53,39 +52,8 @@ function init() {
   wireJumpToBottom();
   setDateDefaults();
   loadSavedData();
-  probeAutoUpdateStatus();
   startAutoRefresh();
   startCountdownTimer();
-}
-
-function showUpdateStatus(state, text) {
-  var el = $('updateStatus');
-  if (!el) return;
-  el.className = 'update-status' + (state ? ' ' + state : '');
-  el.textContent = text || '';
-}
-
-function wireUpdaterStatus() {
-  chrome.runtime.onMessage.addListener(function(msg) {
-    if (!msg || msg.type !== 'UPDATER_STATUS') return;
-    var ver = (chrome.runtime.getManifest() || {}).version || '';
-    if (msg.state === 'checking') {
-      showUpdateStatus('', 'Checking GitHub...');
-    } else if (msg.state === 'bootstrapping') {
-      showUpdateStatus('', msg.detail || 'Setting up auto-update...');
-    } else if (msg.state === 'updating') {
-      showUpdateStatus('ready', 'Updating' + (msg.detail ? ' ' + msg.detail : '') + '...');
-    } else if (msg.state === 'ready') {
-      showUpdateStatus('ready', 'v' + (msg.detail || ver) + ' — auto-update ready');
-    } else {
-      showUpdateStatus('', 'v' + ver);
-    }
-  });
-}
-
-function probeAutoUpdateStatus() {
-  var ver = (chrome.runtime.getManifest() || {}).version || '';
-  showUpdateStatus('', 'v' + ver);
 }
 
 // ===== Mode tabs =====
