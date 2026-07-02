@@ -179,9 +179,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: true });
       break;
     case 'CHECK_GITHUB_UPDATE':
-      trySidebarUpdateCheck().then(function(reloaded) {
-        sendResponse({ ok: true, reloaded: reloaded });
-      });
+      try {
+        trySidebarUpdateCheck().then(function(reloaded) {
+          sendResponse({ ok: true, reloaded: !!reloaded });
+        }).catch(function() {
+          sendResponse({ ok: false });
+        });
+      } catch (e) {
+        sendResponse({ ok: false });
+      }
       return true;
 
     case 'LOGIN_FAILED':
