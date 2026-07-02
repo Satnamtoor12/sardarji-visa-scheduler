@@ -58,7 +58,7 @@ its own profile). Chromium/Brave/ungoogled-chromium do this the most cleanly.
 
 ## 2. Set it up & run
 
-1. Click the extension icon to open the **side panel** (or the popup).
+1. Click the extension icon to open the **side panel**.
 2. Fill in:
    - **Email / Password** — your usvisa-info login (saved locally in the browser).
    - **Facility** — the consulate(s) to watch (one, or several via *Advanced*).
@@ -92,16 +92,18 @@ wrong or a CAPTCHA appears, it stops and tells you (no pointless retries).
 ## Files
 
 > 📖 For an A–Z description of **every function**, see [FUNCTIONS.md](FUNCTIONS.md).
+> 🛠️ For known issues, dead code, and cleanup items found in the last audit, see [TODO.md](TODO.md).
 
-| File / folder    | Purpose                                                  |
-|------------------|----------------------------------------------------------|
-| `manifest.json`  | Extension manifest (MV3) — includes the fixed `key`/ID    |
-| `background.js`  | Service worker — login flow, monitoring loop, alerts      |
-| `content.js`     | Runs on `ais.usvisa-info.com` — login, slot check, booking|
-| `popup.*`        | Toolbar popup UI                                          |
-| `sidebar.*`      | Side panel UI                                             |
-| `options.*`      | Settings page                                             |
-| `offscreen.html` | Plays the alert sound                                     |
+| File / folder    | Purpose                                                                 |
+|------------------|--------------------------------------------------------------------------|
+| `manifest.json`  | Extension manifest (MV3) — includes the fixed `key`/ID                   |
+| `background.js`  | Service worker — login flow, monitoring loop, alerts                     |
+| `content.js`     | Runs on `ais.usvisa-info.com` — login, slot check, booking                |
+| `sidebar.*`      | Side panel UI — the screen you actually see (opens on icon click)        |
+| `popup.*`        | Toolbar popup UI — **currently unreachable** (no popup is wired up in the manifest; see [TODO.md](TODO.md)) |
+| `options.*`      | Settings page (`chrome://extensions` → Details → Extension options)      |
+| `offscreen.html` | Plays the alert sound                                                    |
+| `build.js`       | Packages/obfuscates the extension into `../sardarji-dist` (not needed for normal use — see [TODO.md](TODO.md) for a known gap) |
 
 ---
 

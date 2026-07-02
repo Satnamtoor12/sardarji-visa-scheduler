@@ -12,33 +12,34 @@ one-line description of what each does.
 | `actuallySendLogin` | Sends the `DO_LOGIN` command to the page; retries if the content script isn't ready yet. |
 | `addLog` | Appends a timestamped line to the Activity Log (writes are serialized so lines are never lost). |
 | `beginMonitoringLoop` | Starts the slot-checking loop (schedules the first check). |
-| `checkLoginAndProceed` | Asks the page what state it's in, then logs in or proceeds to monitoring. |
 | `clearVisaSiteData` | Clears the visa site's cookies, cache and storage (with a safety timeout). |
-| `closeOldVisaTabs` | Closes leftover visa tabs except the current fresh-login tab. |
-| `connectNative` | Connects to the native messaging host (real mouse/keyboard). |
 | `doKeepAlive` | Sends a lightweight request to keep the session alive between checks. |
 | `ensureScheduleAndMonitor` | Finds the schedule ID, then begins the monitoring loop. |
-| `findOrCreateVisaTab` | Reuses an existing visa tab or opens a new one. |
-| `handleBookingResult` | Handles a booking outcome — notifies and stops monitoring on success. |
+| `handleBookingResult` | Handles a booking outcome — notifies and stops monitoring on success, resumes monitoring on failure. |
 | `handleCheckComplete` | Processes a finished check: stats, session-expiry → re-login, rate-limit backoff, reschedule. |
-| `handleLoginFailed` | Decides **stop** (wrong credentials / captcha) vs **retry** (timeout / transient), capped. |
+| `handleLoginFailed` | Decides **stop** (wrong credentials / captcha) vs **retry** (timeout / transient), capped at `MAX_TRANSIENT_RETRIES`. |
 | `handleLoginSuccess` | Marks login successful, resets flags, resumes monitoring. |
-| `handlePageReady` | Central router for every page load (login / groups / appointment / logged-in / unknown). |
-| `handleSlotFound` | Fires the slot alert (deduped to once/hour) — desktop notification + Telegram + sound. |
-| `isInActiveWindow` | Returns whether the current time/day is inside the configured active hours. |
+| `handlePageReady` | Central router for every page load (login / groups / continue-actions / appointment / logged-in / unknown). |
+| `handleSlotFound` | Fires the slot alert (deduped to once/hour per date+facility) — desktop notification + Telegram + sound. |
+| `isInActiveWindow` | Returns whether the current time/day is inside the configured active hours (schedule). |
 | `notifyDesktop` | Creates a desktop notification only if enabled in settings. |
-| `openFreshLoginSession` | Opens a clean tab, clears site data, and starts a fresh login (used on session expiry). |
+| `openCleanLoginPage` | Icon-click entry point: blank tab → clear cookies/data → open the login page, then wait for START. |
+| `openFreshLoginSession` | Opens a clean tab, clears site data, and starts a fresh login (used on session expiry / retry). |
 | `playSound` | Plays the alert tone via the offscreen document (only if sound is enabled). |
 | `restoreIfActive` | Resumes monitoring after a Chrome / service-worker restart. |
 | `scheduleNext` | Schedules the next check at a randomized interval; adds a keep-alive ping for long gaps. |
-| `sendLoginWithRetry` | Orchestrates login — clears the session if needed, then sends the login command. |
-| `sendNativeMouse` | Sends a command to the native host and returns its response. |
+| `sendLoginWithRetry` | Orchestrates login — guards against duplicate triggers, then sends the login command. |
 | `sendTelegram` | Sends a Telegram message (only if a token + chat ID are configured). |
 | `startMonitoring` | Starts monitoring with the given config and resets all state. |
-| `stopMonitoring` | Stops monitoring and clears all alarms/flags. |
+| `stopMonitoring` | Stops monitoring, clears all alarms/flags, and tells any open visa tab to abort in-progress login/booking. |
 | `triggerCheck` | Runs one cycle: active-hours gate → check page state → run a slot check or re-login. |
 
-*Internal helpers:* `inWindow`, `parseTime` (time-window math inside `isInActiveWindow`), and inline tab-load `listener`s.
+*Internal helpers:* `inWindow`, `parseTime` (time-window math inside `isInActiveWindow`), `runInTab` (inline helper inside `openCleanLoginPage`/`openFreshLoginSession`).
+
+> ⚠️ Note: this file previously described native-mouse functions
+> (`connectNative`, `sendNativeMouse`, `findOrCreateVisaTab`, `closeOldVisaTabs`,
+> `checkLoginAndProceed`) that no longer exist — the native messaging host was
+> removed from the project. This section now reflects the current code.
 
 ---
 
@@ -47,31 +48,34 @@ one-line description of what each does.
 ### Page detection & flow
 | Function | What it does |
 |----------|--------------|
-| `detectPage` | Identifies the current page (login / groups / continue-actions / appointment / logged-in). |
+| `detectPage` | Identifies the current page (login / groups / continue-actions / appointment / logged-in / unknown). |
 | `detectCaptcha` | Detects a reCAPTCHA / hCaptcha on the page. |
 | `getLoginError` | Reads the website's login error text (e.g. "Invalid email or password"). |
 | `getCSRF` | Reads the page's CSRF token for API requests. |
-| `keepSessionAlive` | Sends a quiet same-origin request to refresh the session timer. |
+| `keepSessionAlive` | Sends a quiet same-origin request to refresh the session timer; returns whether still logged in. |
 
 ### Login
 | Function | What it does |
 |----------|--------------|
 | `doLogin` | Full auto-login: type email/password, tick the policy box, submit, then classify success/failure. |
-| `ensurePolicyChecked` | Ticks the privacy/policy checkbox using several reliable methods. |
+| `ensurePolicyChecked` | Ticks the privacy/policy checkbox using several reliable methods (native setter, iCheck events, click fallback). |
 | `dismissBlockingModal` | Closes any blocking modal/popup that's in the way. |
 
 ### Slot checking & booking
 | Function | What it does |
 |----------|--------------|
-| `checkSlots` | Fetches available days, filters by date range, **verifies real bookable times**, alerts/books. |
+| `checkSlots` | Fetches available days per facility, filters by date range, **verifies real bookable times**, alerts/books. |
 | `getTimesForDate` | Fetches the actual bookable times for a date (confirms a slot is real, not a phantom). |
-| `startBooking` | Begins booking a found slot (fetch times → navigate to the booking form). |
-| `handleBookingContinuation` | Resumes an in-progress booking across page navigations. |
+| `startBooking` | Begins booking a found slot (fetch times → save booking state → navigate to the booking form). |
+| `handleBookingContinuation` | Resumes an in-progress booking across page navigations, based on saved `bookingState.step`. |
+| `abortBooking` | Abandons the current booking (e.g. slot taken) and reports failure so monitoring resumes. |
 | `fillBookingForm` | Fills facility / date / time on the booking form and submits. |
 | `clickConfirm` | Clicks the final "Confirm" button to lock in the appointment. |
-| `findScheduleId` | Gets the schedule ID from config, URL or page links. |
+| `pageIndicatesBooked` | Positive-signal check ("has been scheduled", "confirmation number", ...) used to avoid false failure reports. |
+| `finalizeBooking` | Verifies the booking result on whatever page it lands on and reports it exactly once. |
 | `findScheduleOnPage` | Searches the page for the schedule ID (answers `FIND_SCHEDULE`). |
-| `goToSchedulePage` | Navigates to the schedule page. |
+| `goToSchedulePage` | Navigates to the schedule page (answers `GO_TO_SCHEDULE`). |
+| `findScheduleId` | Gets the schedule ID from config, URL, or page links. |
 | `clickScheduleAppointment` | Clicks "Schedule Appointment" on the continue-actions page. |
 | `clickContinueOnGroupsPage` | Clicks "Continue" on the Groups page. |
 
@@ -79,36 +83,51 @@ one-line description of what each does.
 | Function | What it does |
 |----------|--------------|
 | `navigateToMonth` | Moves the datepicker to the target month/year. |
+| `panelMatches` | Checks whether a datepicker panel is showing the given year/month. |
+| `availableDaysIn` | Lists the clickable (available) day numbers in a datepicker panel. |
+| `logCalendarDates` | Logs the calendar's open days for a month — a cross-check against the JSON API response. |
 | `clickDay` | Clicks a specific day — scoped to the correct month panel (avoids wrong-month bookings). |
 
-### Human-like input (mouse/keyboard)
+### Human-like input (synthetic mouse/keyboard)
 | Function | What it does |
 |----------|--------------|
 | `initCursor` / `resetCursor` | Initialize / reset the virtual cursor state. |
-| `moveCursorTo` | Moves the real (native) or synthetic cursor to an element. |
-| `clickAtCursor` | Real OS click (native host) plus synthetic mouse events. |
+| `moveCursorTo` | Moves the synthetic cursor to an element (dispatches mouseenter/over/move). |
+| `clickAtCursor` | Dispatches synthetic mousedown/mouseup/click events at the cursor position. |
 | `macroClick` | Human-like click: move cursor, pause, click. |
 | `macroFocusAndType` | Click a field, then type into it. |
-| `typeHuman` | Types text with realistic per-character timing (native or synthetic). |
-| `forceInputValue` | Forces an input's value in a framework-safe way and verifies it. |
 | `macroScrollToAndFocus` | Scrolls an element into view and moves the cursor to it. |
-| `macroScrollDown` / `macroScrollUp` / `osScroll` | Scroll the page (native wheel or synthetic). |
-| `macroPressEnter` / `macroPressTab` / `pressKey` | Press keys via the native host. |
-| `nativeCall` | Sends a `NATIVE_MOUSE` command to the background → native host. |
-| `viewportToScreen` | Converts in-page coordinates to whole-screen coordinates. |
+| `osScroll` | Scrolls the page smoothly (used by booking-form navigation). |
+| `typeHuman` | Types text with realistic per-character timing via synthetic key/input events. |
+| `forceInputValue` | Forces an input's value via the native setter (framework-safe) and verifies it stuck. |
+| `viewportToScreen` | Converts in-page coordinates to physical screen coordinates (kept for a currently-disabled native-mouse path). |
+| `nativeCall` | Sends a `NATIVE_MOUSE` command to the background (currently unused — see note below). |
+
+> ⚠️ Real OS mouse/keyboard control (`useNativeMouse` / `useNativeKeyboard`) is
+> **disabled by design** — see the comment above these flags in `content.js`.
+> `macroPressEnter`, `macroPressTab`, `macroScrollDown`, `macroScrollUp`, and
+> `pressKey` are dead code left over from when native input was active; they
+> are not called anywhere in the current flow.
 
 ### Utilities
 | Function | What it does |
 |----------|--------------|
 | `done` | Sends `CHECK_COMPLETE` back to the background. |
 | `log` | Sends a log line to the background. |
-| `delay` | Promise-based sleep. |
-| `waitForEl` | Waits for an element to appear (with timeout). |
-| `waitForNavigation` | Waits for the page to navigate/load (with timeout). |
+| `delay` | Abort-aware promise-based sleep (ends early if STOP was pressed). |
+| `waitForEl` | Waits for an element to appear via `MutationObserver` (with timeout). |
+| `waitForLoginResult` | Waits until login resolves: navigation away from `/sign_in`, an inline error, or a captcha. |
+
+> ⚠️ `waitForNavigation` is defined but never called anywhere in the current
+> code — dead code left over from an earlier flow.
 
 ---
 
 ## `popup.js` — toolbar popup UI
+
+> ⚠️ `manifest.json` has no `default_popup`, and the icon-click handler in
+> `background.js` opens the **side panel** instead. This file is currently
+> **unreachable** through normal extension use — see `TODO.md`.
 
 | Function | What it does |
 |----------|--------------|
@@ -119,24 +138,30 @@ one-line description of what each does.
 
 ---
 
-## `sidebar.js` — side-panel UI
+## `sidebar.js` — side-panel UI (the one actually shown to users)
 
 | Function | What it does |
 |----------|--------------|
-| `init` | Boots the sidebar: wires controls, loads data, starts auto-refresh. |
-| `loadSavedData` | Loads saved credentials/config/settings into the form. |
-| `setDateDefaults` | Pre-fills the date range fields. |
-| `startAutoRefresh` | Periodically refreshes status, stats and log. |
-| `updateStatus` | Updates the status badge (Idle / Monitoring). |
-| `updateStats` | Refreshes the counters. |
-| `updateLog` | Renders the activity log. |
-| `wireStartButton` / `wireStopButton` | Hook up Start / Stop. |
-| `wireSaveAdvanced` | Saves advanced settings. |
-| `wireAdvancedToggle` | Expands/collapses the advanced section. |
-| `wireConditionalFields` | Shows/hides dependent fields (e.g. Telegram). |
+| `init` | Boots the sidebar: wires all controls, loads data, starts auto-refresh. |
+| `$` / `$$` | Shorthand for `document.getElementById` / `document.querySelectorAll`. |
+| `wireBookingCelebration` | Wires the celebration banner's close button and listens for a live `BOOKING_CONFIRMED` push. |
+| `showBookingCelebration` | Fills in and shows the "Congratulations! Slot Booked" banner. |
+| `maybeShowBookingCelebration` | Shows the celebration banner on load only if the last booking was recent (avoids surfacing a stale one). |
+| `wireIntervalHints` | Live "= X min" hint next to the interval (seconds) inputs. |
+| `wireAdvancedToggle` | Expands/collapses the Advanced Settings section. |
+| `wireConditionalFields` | Shows/hides dependent fields (schedule windows, Telegram fields). |
 | `wirePasswordToggle` | Show/hide password. |
-| `wireCopyLog` | Copies the activity log. |
 | `wireTestTelegram` | Sends a Telegram test message. |
+| `wireSaveAdvanced` | Saves advanced settings (schedule, telegram, notifications, facilities). |
+| `wireCopyLog` | Copies the activity log to the clipboard. |
+| `wireStartButton` / `wireStopButton` | Hook up Start / Stop, validating inputs first. |
+| `setDateDefaults` | Pre-fills the date range fields (today → +90 days) if empty. |
+| `loadSavedData` | Loads saved credentials/config/settings into the form on open. |
+| `updateStatus` | Updates the status badge (Idle / Monitoring). |
+| `updateStats` | Refreshes the checks / found / last-check counters. |
+| `updateLog` | Renders the activity log; preserves scroll position and shows a "jump to latest" button if scrolled up. |
+| `wireJumpToBottom` | Wires the "↓ New logs" button to jump to the latest log entry. |
+| `startAutoRefresh` | Periodically (every 3s) refreshes status, stats, log, and checks for a new booking. |
 
 ---
 
@@ -151,21 +176,9 @@ one-line description of what each does.
 
 ---
 
-## `native_host/visa_mouse.py` (Windows) & `visa_mouse_mac.py` (macOS)
+## `build.js` — obfuscation/packaging script
 
-Real OS-level mouse/keyboard control. Identical command protocol; Windows uses
-the `user32` API, macOS uses Quartz/CoreGraphics.
-
-| Function | What it does |
-|----------|--------------|
-| `get_screen_size` | Returns the screen width/height. |
-| `get_cursor_pos` / `set_cursor_pos` | Read / move the real OS cursor. |
-| `mouse_down` / `mouse_up` / `mouse_click` | Real mouse button press / release / click. |
-| `scroll_wheel` | Real mouse-wheel scroll. |
-| `human_move` | Moves the cursor along a human-like Bézier curve with jitter. |
-| `key_press` / `key_combo` | Press a key / a key combination (e.g. Ctrl+A). |
-| `type_unicode_char` / `human_type` | Type characters with human-like per-key timing. |
-| `send_message` / `read_message` | Native-messaging protocol I/O (length-prefixed JSON). |
-| `main` | Command dispatcher loop (move / click / type / key / scroll / ping …). |
-
-*macOS-only internal helpers:* `_post_mouse`, `_key_event` (Quartz event wrappers).
+Minifies `background.js`, `content.js`, `popup.js`, `options.js` with Terser
+and copies the rest (`manifest.json`, HTML/CSS, `icons/`) into `../sardarji-dist`.
+Note: `sidebar.js` is **not** in the minified list even though it's the
+primary UI script — see `TODO.md`.
