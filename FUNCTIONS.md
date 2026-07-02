@@ -178,7 +178,6 @@ one-line description of what each does.
 
 ## `build.js` — obfuscation/packaging script
 
-Minifies `background.js`, `content.js`, `popup.js`, `options.js` with Terser
-and copies the rest (`manifest.json`, HTML/CSS, `icons/`) into `../sardarji-dist`.
-Note: `sidebar.js` is **not** in the minified list even though it's the
-primary UI script — see `TODO.md`.
+Minifies `background.js`, `content.js`, `popup.js`, `sidebar.js`, `options.js`,
+`offscreen.js` with Terser and copies the rest (`manifest.json`, HTML/CSS,
+`icons/`) into `../sardarji-dist`.

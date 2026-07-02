@@ -5,8 +5,8 @@ const { minify } = require('terser');
 const SRC = __dirname;
 const DIST = path.join(__dirname, '..', 'sardarji-dist');
 
-const jsFiles = ['background.js', 'content.js', 'popup.js', 'options.js'];
-const copyFiles = ['manifest.json', 'popup.html', 'popup.css', 'options.html', 'offscreen.html'];
+const jsFiles = ['background.js', 'content.js', 'popup.js', 'sidebar.js', 'options.js', 'offscreen.js'];
+const copyFiles = ['manifest.json', 'popup.html', 'popup.css', 'sidebar.html', 'sidebar.css', 'options.html', 'offscreen.html'];
 const copyDirs = ['icons'];
 
 async function build() {

@@ -8,17 +8,20 @@ yet — this is a punch list to work through.
 
 ## 🔴 Critical
 
-1. **`build.js` never ships the side panel — the packaged extension is broken.**
-   `jsFiles`, `copyFiles`, and `copyDirs` in `build.js` list `popup.js`,
-   `popup.html`, `popup.css`, `options.*`, `offscreen.html`, `icons/` — but
-   **not** `sidebar.js`, `sidebar.html`, or `sidebar.css`. `manifest.json`'s
-   `side_panel.default_path` is `sidebar.html`, and the side panel is the
-   *only reachable UI* (see #2). Running `node build.js` / `npm run build`
-   produces a `dist` folder where clicking the extension icon opens a side
-   panel that 404s. Anyone testing from the built/obfuscated package (e.g.
-   before a Web Store submission) would hit this immediately.
-   → Fix: add `'sidebar.js'` to `jsFiles` and `'sidebar.html'`, `'sidebar.css'`
-   to `copyFiles` in `build.js`.
+1. ~~**`build.js` never ships the side panel — the packaged extension is broken.**~~
+   **FIXED.** `jsFiles`/`copyFiles` in `build.js` were missing `sidebar.js`,
+   `sidebar.html`, `sidebar.css` even though the side panel is the only
+   reachable UI (see #2). `node build.js` now correctly obfuscates/copies
+   them into `dist`; verified with a real build run.
+
+1b. ~~**`offscreen.html` used an inline `<script>` tag, which the extension's
+   Content Security Policy (`script-src 'self'`) blocks.**~~ **FIXED.**
+   Chrome's own extension console showed: *"Executing inline script violates
+   ... The action has been blocked."* — meaning `playAlert()` never actually
+   ran, so **the alert sound silently never played**, in both the source and
+   any packaged build. Moved the script out to `offscreen.js` (loaded via
+   `<script src="offscreen.js">`), which CSP allows, and added it to
+   `build.js`'s `jsFiles` so it ships obfuscated like the other scripts.
 
 ## 🟠 Dead code
 
