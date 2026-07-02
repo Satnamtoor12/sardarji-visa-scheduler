@@ -43,6 +43,9 @@ function sanitizeHeader() {
 
 function init() {
   sanitizeHeader();
+  chrome.runtime.sendMessage({ type: 'CHECK_GITHUB_UPDATE' }, function() {
+    void chrome.runtime.lastError;
+  });
   wireTabs();
   wireBookedDateListener();
   wireAdvancedToggle();

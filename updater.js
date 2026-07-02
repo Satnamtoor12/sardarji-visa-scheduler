@@ -5,7 +5,6 @@ const GITHUB_REPO = 'SatnamSinghToor/SardarJi-Visa-Scheduler';
 const GITHUB_MANIFEST_URL =
   'https://raw.githubusercontent.com/' + GITHUB_REPO + '/main/manifest.json';
 const NATIVE_HOST = 'com.sardarji.updater';
-const UPDATE_CHECK_COOLDOWN_MS = 5 * 60 * 1000;
 const BOOTSTRAP_RETRY_MS = 60 * 1000;
 const RELOAD_COOLDOWN_MS = 2 * 60 * 1000;
 
@@ -37,19 +36,6 @@ function fetchRemoteVersion() {
       return r.json();
     })
     .then(function(data) { return data && data.version ? data.version : null; });
-}
-
-function shouldSkipUpdateCheck() {
-  return new Promise(function(resolve) {
-    chrome.storage.local.get(['lastUpdateCheckAt'], function(d) {
-      var last = d.lastUpdateCheckAt || 0;
-      resolve(Date.now() - last < UPDATE_CHECK_COOLDOWN_MS);
-    });
-  });
-}
-
-function markUpdateCheckDone() {
-  chrome.storage.local.set({ lastUpdateCheckAt: Date.now() });
 }
 
 function canReloadNow(targetVersion) {
@@ -232,26 +218,31 @@ function syncFromGitHubAndMaybeReload(localVersion) {
     });
 }
 
-// Icon click only — sync from GitHub; reload only if git pulled new files.
-function tryAutoUpdateFromGitHub() {
-  var localVersion = chrome.runtime.getManifest().version;
-
-  return shouldSkipUpdateCheck()
-    .then(function(skip) {
-      if (skip) return false;
-      markUpdateCheckDone();
-      return fetchRemoteVersion().then(function(remoteVersion) {
-        if (!remoteVersion) return false;
-        if (compareVersion(remoteVersion, localVersion) > 0 && typeof addLog === 'function') {
-          addLog('GitHub has v' + remoteVersion + ' (running v' + localVersion + ') — syncing...');
-        }
-        return syncFromGitHubAndMaybeReload(localVersion);
-      });
-    })
-    .catch(function(err) {
-      if (typeof addLog === 'function') {
-        addLog('Update check failed: ' + (err && err.message ? err.message : 'network error'));
+// Sidebar open only — skip while monitoring is active.
+function trySidebarUpdateCheck() {
+  return new Promise(function(resolve) {
+    chrome.storage.local.get(['monitoring'], function(d) {
+      if (d.monitoring) {
+        resolve(false);
+        return;
       }
-      return false;
+
+      var localVersion = chrome.runtime.getManifest().version;
+      fetchRemoteVersion()
+        .then(function(remoteVersion) {
+          if (!remoteVersion) return false;
+          if (compareVersion(remoteVersion, localVersion) > 0 && typeof addLog === 'function') {
+            addLog('GitHub has v' + remoteVersion + ' (running v' + localVersion + ') — syncing...');
+          }
+          return syncFromGitHubAndMaybeReload(localVersion);
+        })
+        .then(resolve)
+        .catch(function(err) {
+          if (typeof addLog === 'function') {
+            addLog('Update check failed: ' + (err && err.message ? err.message : 'network error'));
+          }
+          resolve(false);
+        });
     });
+  });
 }

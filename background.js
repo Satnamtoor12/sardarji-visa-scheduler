@@ -28,10 +28,7 @@ chrome.action.onClicked.addListener(function(tab) {
   if (chrome.sidePanel && chrome.sidePanel.open) {
     try { chrome.sidePanel.open({ windowId: tab.windowId }).catch(function() {}); } catch (e) {}
   }
-  // Sync latest code from GitHub (native host) — reloads if changed.
-  tryAutoUpdateFromGitHub().then(function(reloaded) {
-    if (!reloaded) openCleanLoginPage('Opened via icon');
-  });
+  openCleanLoginPage('Opened via icon');
 });
 
 // Open/reuse ONE tab → blank → clear visa data → load the login page. Does not
@@ -181,6 +178,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       addLog('Booked date auto-detected: ' + (msg.date || 'unknown'));
       sendResponse({ ok: true });
       break;
+    case 'CHECK_GITHUB_UPDATE':
+      trySidebarUpdateCheck().then(function(reloaded) {
+        sendResponse({ ok: true, reloaded: reloaded });
+      });
+      return true;
 
     case 'LOGIN_FAILED':
       handleLoginFailed(msg.reason);
