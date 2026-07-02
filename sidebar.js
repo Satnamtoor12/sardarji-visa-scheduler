@@ -35,6 +35,7 @@ function init() {
   wireTabs();
   wireFetchBooked();
   wireBookedDateListener();
+  wireUpdaterStatus();
   wireAdvancedToggle();
   wireConditionalFields();
   wirePasswordToggle();
@@ -57,12 +58,6 @@ function init() {
   startCountdownTimer();
 }
 
-function nativeInstallHint() {
-  var ua = navigator.userAgent || '';
-  if (/Win/i.test(ua)) return 'native-host\\install.ps1';
-  return 'native-host/install.sh';
-}
-
 function showUpdateStatus(state, text) {
   var el = $('updateStatus');
   if (!el) return;
@@ -70,16 +65,27 @@ function showUpdateStatus(state, text) {
   el.textContent = text || '';
 }
 
+function wireUpdaterStatus() {
+  chrome.runtime.onMessage.addListener(function(msg) {
+    if (!msg || msg.type !== 'UPDATER_STATUS') return;
+    var ver = (chrome.runtime.getManifest() || {}).version || '';
+    if (msg.state === 'checking') {
+      showUpdateStatus('', 'Checking GitHub...');
+    } else if (msg.state === 'bootstrapping') {
+      showUpdateStatus('', msg.detail || 'Setting up auto-update...');
+    } else if (msg.state === 'updating') {
+      showUpdateStatus('ready', 'Updating' + (msg.detail ? ' ' + msg.detail : '') + '...');
+    } else if (msg.state === 'ready') {
+      showUpdateStatus('ready', 'v' + (msg.detail || ver) + ' — auto-update ready');
+    } else {
+      showUpdateStatus('', 'v' + ver);
+    }
+  });
+}
+
 function probeAutoUpdateStatus() {
   var ver = (chrome.runtime.getManifest() || {}).version || '';
-  showUpdateStatus('', 'v' + ver + ' — icon click = GitHub sync');
-  chrome.runtime.sendNativeMessage('com.sardarji.updater', { action: 'ping' }, function(resp) {
-    if (chrome.runtime.lastError) {
-      showUpdateStatus('warn', 'v' + ver + ' — run ' + nativeInstallHint() + ' once');
-      return;
-    }
-    showUpdateStatus('ready', 'v' + ver + ' — auto-update ready');
-  });
+  showUpdateStatus('', 'v' + ver);
 }
 
 // ===== Mode tabs =====

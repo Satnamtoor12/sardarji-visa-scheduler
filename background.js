@@ -108,9 +108,7 @@ chrome.runtime.onInstalled.addListener((details) => {
       }
     }
     chrome.storage.local.set(payload);
-    if (details.reason === 'install') {
-      addLog('Tip: run native-host/install once — icon click = GitHub auto-sync.');
-    }
+
   });
 });
 
