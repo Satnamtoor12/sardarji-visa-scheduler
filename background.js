@@ -160,7 +160,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: true });
       break;
     case 'LOGIN_SUCCESS':
-      handleLoginSuccess();
+      handleLoginSuccess(sender);
+      sendResponse({ ok: true });
+      break;
+    case 'BOOKED_DATE_DETECTED':
+      addLog('Booked date auto-detected: ' + (msg.date || 'unknown'));
       sendResponse({ ok: true });
       break;
     case 'LOGIN_FAILED':
@@ -529,8 +533,10 @@ function handlePageReady(msg, sender) {
     }
     else if (msg.page === 'groups') {
       addLog('On Groups page. Content script clicking Continue...');
+      if (sender.tab) triggerBookedDateDetection(sender.tab.id);
     }
     else if (msg.page === 'continue-actions') {
+      if (sender.tab) triggerBookedDateDetection(sender.tab.id);
       addLog('On Continue Actions page. Saving schedule ID & clicking Schedule Appointment...');
       // URL has schedule ID — extract and save while page navigates
       const m = msg.url.match(/schedule\/(\d+)/);
@@ -545,6 +551,7 @@ function handlePageReady(msg, sender) {
       }
     }
     else if (msg.page === 'appointment') {
+      if (sender.tab) triggerBookedDateDetection(sender.tab.id);
       addLog('On Appointment page (calendar ready).');
       const m = msg.url.match(/schedule\/(\d+)/);
       if (m) {
@@ -568,6 +575,7 @@ function handlePageReady(msg, sender) {
       }
     }
     else if (msg.page === 'logged-in') {
+      if (sender.tab) triggerBookedDateDetection(sender.tab.id);
       addLog('Logged in. Finding schedule...');
       ensureScheduleAndMonitor(sender.tab);
     }
@@ -664,7 +672,7 @@ function handleLoginFailed(reason) {
   });
 }
 
-function handleLoginSuccess() {
+function handleLoginSuccess(sender) {
   chrome.storage.local.set({
     loginInProgress: false,
     loginClearInProgress: false,
@@ -674,7 +682,29 @@ function handleLoginSuccess() {
     loginPagePrepared: false
   });
   addLog('Login successful!');
-  setTimeout(() => beginMonitoringLoop(), 3000);
+  setTimeout(() => {
+    const tabId = sender && sender.tab && sender.tab.id;
+    if (tabId) triggerBookedDateDetection(tabId);
+    else {
+      chrome.tabs.query({ url: 'https://ais.usvisa-info.com/*' }, (tabs) => {
+        if (tabs.length) triggerBookedDateDetection(tabs[0].id);
+      });
+    }
+    beginMonitoringLoop();
+  }, 3000);
+}
+
+// Ask the visa-site tab to read the booked date (Groups page is most reliable).
+function triggerBookedDateDetection(tabId) {
+  chrome.storage.local.get(['config', 'monitoring'], (d) => {
+    if (!d.monitoring) return;
+    const c = d.config || {};
+    if (c.mode !== 'reschedule' || c.bookedDate) return;
+    chrome.tabs.sendMessage(tabId, { type: 'DETECT_BOOKED_DATE' }, (resp) => {
+      if (chrome.runtime.lastError) return;
+      if (resp && resp.date) addLog('Booked date read from page: ' + resp.date);
+    });
+  });
 }
 
 function beginMonitoringLoop() {

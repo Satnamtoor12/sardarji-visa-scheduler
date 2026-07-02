@@ -34,6 +34,7 @@ function dayBefore(iso) {
 function init() {
   wireTabs();
   wireFetchBooked();
+  wireBookedDateListener();
   wireAdvancedToggle();
   wireConditionalFields();
   wirePasswordToggle();
@@ -82,13 +83,58 @@ function setActiveTab(tab, skipSave) {
   if (!skipSave) chrome.storage.local.set({ activeTab: activeTab });
 }
 
-// ===== Auto-fetch the booked date from an open visa-site tab =====
+// ===== Booked date: auto-detect after login + optional manual re-fetch =====
+function updateBookedDateStatus(state, detail) {
+  var el = $('rsBookedStatus');
+  if (!el) return;
+  el.className = 'booked-status';
+  if (state === 'pending') {
+    el.classList.add('pending');
+    el.textContent = 'Will be auto-detected after login…';
+  } else if (state === 'detected') {
+    el.classList.add('detected');
+    el.textContent = '✓ Auto-detected' + (detail ? ': ' + detail : '');
+  } else if (state === 'error') {
+    el.classList.add('error');
+    el.textContent = detail || 'Could not detect booked date';
+  } else {
+    el.textContent = '';
+  }
+}
+
+function applyDetectedBookedDate(date, opts) {
+  opts = opts || {};
+  var rb = $('rsBookedDate');
+  if (rb) rb.value = date;
+  updateBookedDateStatus('detected', date);
+  chrome.storage.local.get(['reschedule', 'config'], function(d) {
+    var rs = d.reschedule || {};
+    rs.bookedDate = date;
+    var toSet = { reschedule: rs };
+    var c = d.config || {};
+    if (c.mode === 'reschedule' && (opts.force || !c.bookedDate)) {
+      c.bookedDate = date;
+      c.dateTo = dayBefore(date);
+      toSet.config = c;
+    }
+    chrome.storage.local.set(toSet);
+  });
+}
+
+function wireBookedDateListener() {
+  chrome.runtime.onMessage.addListener(function(msg) {
+    if (msg && msg.type === 'BOOKED_DATE_DETECTED' && msg.date) {
+      applyDetectedBookedDate(msg.date);
+    }
+  });
+}
+
 function wireFetchBooked() {
   var btn = $('rsFetchBooked');
   if (!btn) return;
 
   function reset() {
-    setTimeout(function() { btn.textContent = '⟳ Auto-fetch'; }, 2500);
+    setTimeout(function() { btn.textContent = '⟳ Re-fetch'; }, 2500);
   }
 
   btn.addEventListener('click', function() {
@@ -103,15 +149,10 @@ function wireFetchBooked() {
         if (chrome.runtime.lastError || !resp) {
           btn.textContent = '✗ Page not ready';
         } else if (resp.date) {
-          if ($('rsBookedDate')) $('rsBookedDate').value = resp.date;
+          applyDetectedBookedDate(resp.date, { force: true });
           btn.textContent = '✓ Found';
-          // Persist into the saved reschedule form so it survives reloads.
-          chrome.storage.local.get(['reschedule'], function(d) {
-            var rs = d.reschedule || {};
-            rs.bookedDate = resp.date;
-            chrome.storage.local.set({ reschedule: rs });
-          });
         } else {
+          updateBookedDateStatus('error', 'Not found on page — log in first');
           btn.textContent = '✗ Not found';
         }
         reset();
@@ -659,6 +700,7 @@ function startReschedule() {
 
     chrome.runtime.sendMessage({ type: 'START_MONITORING', config: config }, function() {
       updateStatus(true, config);
+      if (!bookedDate) updateBookedDateStatus('pending');
     });
   });
 }
@@ -742,7 +784,10 @@ function loadSavedData() {
 
       if (data.reschedule) {
         if ($('rsFacility')) $('rsFacility').value = data.reschedule.facilityId || '';
-        if ($('rsBookedDate') && data.reschedule.bookedDate) $('rsBookedDate').value = data.reschedule.bookedDate;
+        if ($('rsBookedDate') && data.reschedule.bookedDate) {
+          $('rsBookedDate').value = data.reschedule.bookedDate;
+          updateBookedDateStatus('detected', data.reschedule.bookedDate);
+        }
         if ($('rsFromDate') && data.reschedule.fromDate) $('rsFromDate').value = data.reschedule.fromDate;
         if ($('rsIntervalMin')) $('rsIntervalMin').value = data.reschedule.intervalMin || 60;
         if ($('rsIntervalMax')) $('rsIntervalMax').value = data.reschedule.intervalMax || 120;
@@ -865,8 +910,13 @@ function startAutoRefresh() {
 
       // If the booked date was auto-detected mid-run, surface it in the form.
       var rb = $('rsBookedDate');
-      if (rb && !rb.value && data.reschedule && data.reschedule.bookedDate) {
-        rb.value = data.reschedule.bookedDate;
+      if (rb && data.reschedule && data.reschedule.bookedDate) {
+        if (!rb.value) rb.value = data.reschedule.bookedDate;
+        if (data.config && data.config.mode === 'reschedule' && data.config.bookedDate) {
+          updateBookedDateStatus('detected', data.config.bookedDate);
+        }
+      } else if (data.config && data.config.mode === 'reschedule' && data.monitoring && !data.config.bookedDate) {
+        updateBookedDateStatus('pending');
       }
     });
   }, 3000);

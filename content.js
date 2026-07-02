@@ -30,8 +30,7 @@
       // this page (the Groups page shows it right after login).
       if (data.config && data.config.mode === 'reschedule' && !data.config.bookedDate &&
           page !== 'login' && page !== 'unknown') {
-        const found = extractBookedDate();
-        if (found) saveDetectedBookedDate(found);
+        detectBookedDateIfNeeded();
       }
 
       // On Groups page: click Continue to navigate to schedule page
@@ -104,6 +103,17 @@
       case 'GET_BOOKED_DATE':
         sendResponse({ date: extractBookedDate() });
         break;
+      case 'DETECT_BOOKED_DATE':
+        chrome.storage.local.get(['config'], (d) => {
+          const c = d.config || {};
+          let date = null;
+          if (c.mode === 'reschedule' && !c.bookedDate) {
+            date = extractBookedDate();
+            if (date) saveDetectedBookedDate(date);
+          }
+          sendResponse({ date });
+        });
+        return true;
       default:
         sendResponse({ ok: false });
     }
@@ -246,6 +256,8 @@
 
   // Click Continue button on Groups page to navigate to schedule
   async function clickContinueOnGroupsPage() {
+    // Read booked date from the Groups page before navigation wipes it.
+    await detectBookedDateIfNeeded();
     log('On Groups page — clicking Continue...');
     await delay(1500 + Math.random() * 1500);
 
@@ -1039,9 +1051,22 @@
 
     for (const text of candidates) {
       const d = parseApptDate(text);
-      if (d && d > today) return d;
+      if (d && d >= today) return d;
     }
     return null;
+  }
+
+  // Try reading the booked date when reschedule mode is active and unknown.
+  function detectBookedDateIfNeeded() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['config'], (d) => {
+        const c = d.config || {};
+        if (c.mode !== 'reschedule' || c.bookedDate) { resolve(null); return; }
+        const found = extractBookedDate();
+        if (found) saveDetectedBookedDate(found);
+        resolve(found);
+      });
+    });
   }
 
   // Persist an auto-detected booked date: it becomes the reschedule upper
@@ -1056,6 +1081,7 @@
       rs.bookedDate = found;
       chrome.storage.local.set({ config: c, reschedule: rs }, () => {
         log('Detected booked appointment: ' + found + ' — hunting dates before it.');
+        chrome.runtime.sendMessage({ type: 'BOOKED_DATE_DETECTED', date: found }, () => void chrome.runtime.lastError);
       });
     });
   }

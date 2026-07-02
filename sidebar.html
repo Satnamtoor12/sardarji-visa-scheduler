@@ -124,9 +124,10 @@
         <div class="section">
           <div class="log-header">
             <label>Currently Booked Date</label>
-            <span id="rsFetchBooked" class="copy-btn" title="Read the booked date from an open visa-site tab">⟳ Auto-fetch</span>
+            <span id="rsFetchBooked" class="copy-btn" title="Re-read the booked date from the visa site">⟳ Re-fetch</span>
           </div>
-          <input type="date" id="rsBookedDate">
+          <input type="date" id="rsBookedDate" readonly title="Filled automatically after login">
+          <div id="rsBookedStatus" class="booked-status"></div>
         </div>
         <div class="section">
           <label>Earliest Acceptable Date</label>
@@ -147,9 +148,9 @@
           <label for="rsAutoBook">Auto-reschedule when earlier date found</label>
         </div>
         <div class="tab-hint">
-          Only dates <b>before</b> your booked date are considered. On success your
-          existing appointment is moved to the earlier date. Leave the booked date
-          empty and it will be <b>auto-detected after login</b>.
+          Pick your <b>Earliest Acceptable Date</b> and press START — your current
+          booked date is read from the visa site after login. Only dates
+          <b>before</b> that booking are considered.
         </div>
       </div>
     </div>
