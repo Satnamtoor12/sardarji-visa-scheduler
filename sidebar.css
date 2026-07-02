@@ -31,6 +31,12 @@ body {
   font-weight: 600;
 }
 
+.label-hint {
+  font-size: 10px;
+  color: #a6adc8;
+  font-weight: 400;
+}
+
 .designed-by {
   text-align: center;
   font-size: 11px;
