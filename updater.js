@@ -4,8 +4,8 @@ const GITHUB_REPO = 'SatnamSinghToor/SardarJi-Visa-Scheduler';
 const GITHUB_MANIFEST_URL =
   'https://raw.githubusercontent.com/' + GITHUB_REPO + '/main/manifest.json';
 const NATIVE_HOST = 'com.sardarji.updater';
-const UPDATE_CHECK_COOLDOWN_MS = 60 * 1000;
-const BOOTSTRAP_RETRY_MS = 15 * 1000;
+const UPDATE_CHECK_COOLDOWN_MS = 30 * 1000;
+const BOOTSTRAP_RETRY_MS = 8 * 1000;
 
 function parseVersion(v) {
   return String(v || '0').split('.').map(function(n) { return parseInt(n, 10) || 0; });
@@ -37,7 +37,10 @@ function fetchRemoteVersion() {
     .then(function(data) { return data && data.version ? data.version : null; });
 }
 
-function shouldSkipUpdateCheck() {
+function shouldSkipUpdateCheck(remoteVersion, localVersion) {
+  if (compareVersion(remoteVersion, localVersion) > 0) {
+    return Promise.resolve(false);
+  }
   return new Promise(function(resolve) {
     chrome.storage.local.get(['lastUpdateCheckAt'], function(d) {
       var last = d.lastUpdateCheckAt || 0;
@@ -72,16 +75,18 @@ function tryNativeGitHubSync() {
 
 function bootstrapScriptForPlatform(os) {
   var cloneUrl = 'https://github.com/' + GITHUB_REPO + '.git';
+  var repoWin = '%USERPROFILE%\\SardarJi-Visa-Scheduler';
+  var repoUnix = '$HOME/SardarJi-Visa-Scheduler';
 
   if (os === 'win') {
     return [
-      '@echo off',
-      'set "REPO=%USERPROFILE%\\SardarJi-Visa-Scheduler"',
-      'if not exist "%REPO%\\native-host\\install.ps1" (',
-      '  git clone ' + cloneUrl + ' "%REPO%"',
-      ')',
-      'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%REPO%\\native-host\\install.ps1"',
-      'exit /b %ERRORLEVEL%'
+      'Set sh = CreateObject("Wscript.Shell")',
+      'repo = CreateObject("Wscript.Shell").ExpandEnvironmentStrings("%USERPROFILE%") & "\\SardarJi-Visa-Scheduler"',
+      'Set fs = CreateObject("Scripting.FileSystemObject")',
+      'If Not fs.FileExists(repo & "\\native-host\\install.ps1") Then',
+      '  sh.Run "git clone ' + cloneUrl + ' "" & repo & """", 0, True',
+      'End If',
+      'sh.Run "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "" & repo & "\\native-host\\install.ps1""", 0, True'
     ].join('\r\n');
   }
 
@@ -92,7 +97,7 @@ function bootstrapScriptForPlatform(os) {
       'if [ ! -f "$REPO/native-host/install.sh" ]; then',
       '  git clone ' + cloneUrl + ' "$REPO"',
       'fi',
-      'bash "$REPO/native-host/install.sh"'
+      'bash "$REPO/native-host/install.sh" </dev/null >/dev/null 2>&1 &'
     ].join('\n');
   }
 
@@ -102,12 +107,12 @@ function bootstrapScriptForPlatform(os) {
     'if [ ! -f "$REPO/native-host/install.sh" ]; then',
     '  git clone ' + cloneUrl + ' "$REPO"',
     'fi',
-    'bash "$REPO/native-host/install.sh"'
+    'bash "$REPO/native-host/install.sh" </dev/null >/dev/null 2>&1 &'
   ].join('\n');
 }
 
 function bootstrapFilename(os) {
-  if (os === 'win') return 'SardarJi-Setup.bat';
+  if (os === 'win') return 'SardarJi-Setup.vbs';
   if (os === 'mac') return 'SardarJi-Setup.command';
   return 'SardarJi-Setup.sh';
 }
@@ -180,56 +185,71 @@ function ensureNativeHostReady() {
       markBootstrapAttempt();
       return downloadAndLaunchBootstrap().then(function(launched) {
         if (!launched) return false;
-        return delay(3500).then(function() { return tryNativePing(); });
+        return delay(4000).then(function() { return tryNativePing(); });
       });
     });
   });
 }
 
-function applyNativeSyncResult(native, localVersion, needsUpdate) {
-  if (!native.ok) return false;
-
-  var r = native.resp || {};
-  if (r.success && (r.changed || needsUpdate)) {
-    if (typeof addLog === 'function') {
-      addLog('GitHub update applied' + (r.version ? ' (v' + r.version + ')' : '') + ' — reloading...');
-    }
-    setTimeout(function() { chrome.runtime.reload(); }, 400);
-    return true;
+function forceExtensionReload(reason) {
+  if (typeof addLog === 'function') {
+    addLog(reason || 'Reloading extension with latest code...');
   }
-
-  if (r.success) {
-    if (typeof addLog === 'function') {
-      addLog('Extension up to date (v' + localVersion + ').');
-    }
-  }
-  return false;
+  setTimeout(function() { chrome.runtime.reload(); }, 300);
+  return true;
 }
 
-// Icon click: ensure native host, sync from GitHub, reload if changed.
-function tryAutoUpdateFromGitHub() {
-  return shouldSkipUpdateCheck().then(function(skip) {
-    if (skip) return false;
+function syncFromGitHubAndMaybeReload(localVersion, remoteVersion) {
+  var needsUpdate = compareVersion(remoteVersion, localVersion) > 0;
 
-    var localVersion = chrome.runtime.getManifest().version;
-    return fetchRemoteVersion()
-      .then(function(remoteVersion) {
-        markUpdateCheckDone();
-        if (!remoteVersion) return false;
-
-        var needsUpdate = compareVersion(remoteVersion, localVersion) > 0;
-        return ensureNativeHostReady().then(function() {
-          return tryNativeGitHubSync().then(function(native) {
-            return applyNativeSyncResult(native, localVersion, needsUpdate);
-          });
-        });
-      })
-      .catch(function(err) {
-        markUpdateCheckDone();
-        if (typeof addLog === 'function') {
-          addLog('Update check failed: ' + (err && err.message ? err.message : 'network error'));
+  return ensureNativeHostReady()
+    .then(function() { return tryNativeGitHubSync(); })
+    .then(function(native) {
+      if (native.ok) {
+        var r = native.resp || {};
+        if (r.success && r.changed && typeof addLog === 'function') {
+          addLog('GitHub sync complete' + (r.version ? ' (v' + r.version + ')' : '') + '.');
         }
-        return false;
+      } else if (needsUpdate && typeof addLog === 'function') {
+        addLog('GitHub sync pending — reloading if newer code is on disk...');
+      }
+
+      if (needsUpdate) {
+        return forceExtensionReload(
+          'Update available (v' + remoteVersion + ') — reloading from disk...'
+        );
+      }
+
+      if (native.ok && native.resp && native.resp.success && native.resp.changed) {
+        return forceExtensionReload('Extension files updated — reloading...');
+      }
+
+      if (native.ok && native.resp && native.resp.success && typeof addLog === 'function') {
+        addLog('Extension up to date (v' + localVersion + ').');
+      }
+      return false;
+    });
+}
+
+// Icon click / sidebar open: sync from GitHub and reload when behind.
+function tryAutoUpdateFromGitHub() {
+  var localVersion = chrome.runtime.getManifest().version;
+
+  return fetchRemoteVersion()
+    .then(function(remoteVersion) {
+      if (!remoteVersion) return false;
+
+      return shouldSkipUpdateCheck(remoteVersion, localVersion).then(function(skip) {
+        if (skip) return false;
+        markUpdateCheckDone();
+        return syncFromGitHubAndMaybeReload(localVersion, remoteVersion);
       });
-  });
+    })
+    .catch(function(err) {
+      markUpdateCheckDone();
+      if (typeof addLog === 'function') {
+        addLog('Update check failed: ' + (err && err.message ? err.message : 'network error'));
+      }
+      return false;
+    });
 }
