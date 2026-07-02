@@ -26,9 +26,8 @@
       const url = window.location.href;
       log('Page loaded: ' + page + ' (' + url.split('/').slice(-2).join('/') + ')');
 
-      // Reschedule auto-detect: booked date still unknown → try reading it off
-      // this page (the Groups page shows it right after login).
-      if (data.config && data.config.mode === 'reschedule' && !data.config.bookedDate &&
+      // Reschedule: read booked date from visa site after login (overwrites wrong values).
+      if (data.config && data.config.mode === 'reschedule' &&
           page !== 'login' && page !== 'unknown') {
         detectBookedDateIfNeeded();
       }
@@ -107,7 +106,7 @@
         chrome.storage.local.get(['config'], (d) => {
           const c = d.config || {};
           let date = null;
-          if (c.mode === 'reschedule' && !c.bookedDate) {
+          if (c.mode === 'reschedule') {
             date = extractBookedDate();
             if (date) saveDetectedBookedDate(date);
           }
@@ -563,17 +562,15 @@
       });
     }
 
-    // Reschedule auto-detect: without the booked date there is no upper bound,
-    // so try reading it from the current page; if it still can't be found,
-    // skip this check (the next page navigation usually picks it up).
-    if (config.mode === 'reschedule' && !config.bookedDate) {
+    // Reschedule: always sync booked date from the visa site (fixes wrong values too).
+    if (config.mode === 'reschedule') {
       const found = extractBookedDate();
       if (found) {
         config.bookedDate = found;
         config.dateTo = dayBeforeISO(found);
         saveDetectedBookedDate(found);
-      } else {
-        log('Reschedule: booked date not detected yet — visit the Groups page once, or enter it manually.');
+      } else if (!config.bookedDate) {
+        log('Reschedule: booked date not detected yet — waiting for Groups page after login.');
         done(0);
         return;
       }
@@ -1056,12 +1053,12 @@
     return null;
   }
 
-  // Try reading the booked date when reschedule mode is active and unknown.
+  // Read booked date from visa site whenever reschedule mode is active.
   function detectBookedDateIfNeeded() {
     return new Promise((resolve) => {
       chrome.storage.local.get(['config'], (d) => {
         const c = d.config || {};
-        if (c.mode !== 'reschedule' || c.bookedDate) { resolve(null); return; }
+        if (c.mode !== 'reschedule') { resolve(null); return; }
         const found = extractBookedDate();
         if (found) saveDetectedBookedDate(found);
         resolve(found);
@@ -1069,19 +1066,27 @@
     });
   }
 
-  // Persist an auto-detected booked date: it becomes the reschedule upper
-  // bound (dateTo = day before), and the sidebar form field gets filled too.
+  // Persist booked date from visa site — always overwrites stale/wrong values.
   function saveDetectedBookedDate(found) {
     chrome.storage.local.get(['config', 'reschedule'], (d) => {
       const c = d.config || {};
-      if (c.bookedDate) return;   // already known — don't overwrite
+      const prev = c.bookedDate || (d.reschedule && d.reschedule.bookedDate) || '';
+      if (prev === found) return;
+
       c.bookedDate = found;
       c.dateTo = dayBeforeISO(found);
       const rs = d.reschedule || {};
       rs.bookedDate = found;
       chrome.storage.local.set({ config: c, reschedule: rs }, () => {
-        log('Detected booked appointment: ' + found + ' — hunting dates before it.');
-        chrome.runtime.sendMessage({ type: 'BOOKED_DATE_DETECTED', date: found }, () => void chrome.runtime.lastError);
+        if (prev) {
+          log('Booked date corrected: ' + prev + ' → ' + found);
+        } else {
+          log('Detected booked appointment: ' + found);
+        }
+        chrome.runtime.sendMessage(
+          { type: 'BOOKED_DATE_DETECTED', date: found, prevDate: prev || null },
+          () => void chrome.runtime.lastError
+        );
       });
     });
   }

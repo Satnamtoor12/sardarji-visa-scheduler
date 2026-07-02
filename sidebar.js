@@ -47,7 +47,6 @@ function init() {
     void chrome.runtime.lastError;
   });
   wireTabs();
-  wireFetchBooked();
   wireBookedDateListener();
   wireAdvancedToggle();
   wireConditionalFields();
@@ -97,36 +96,39 @@ function setActiveTab(tab, skipSave) {
   if (!skipSave) chrome.storage.local.set({ activeTab: activeTab });
 }
 
-// ===== Booked date: auto-detect after login + optional manual re-fetch =====
+// ===== Booked date: auto-detect after login (always overwrites wrong values) =====
 function updateBookedDateStatus(state, detail) {
   var el = $('rsBookedStatus');
   if (!el) return;
   el.className = 'booked-status';
   if (state === 'pending') {
     el.classList.add('pending');
-    el.textContent = 'Will be auto-detected after login…';
+    el.textContent = 'Auto-detecting after login…';
   } else if (state === 'detected') {
     el.classList.add('detected');
-    el.textContent = '✓ Auto-detected' + (detail ? ': ' + detail : '');
-  } else if (state === 'error') {
-    el.classList.add('error');
-    el.textContent = detail || 'Could not detect booked date';
+    el.textContent = '✓ From visa site' + (detail ? ': ' + detail : '');
+  } else if (state === 'corrected') {
+    el.classList.add('detected');
+    el.textContent = '✓ Corrected to ' + (detail || '');
   } else {
     el.textContent = '';
   }
 }
 
-function applyDetectedBookedDate(date, opts) {
-  opts = opts || {};
+function applyDetectedBookedDate(date, prevDate) {
   var rb = $('rsBookedDate');
   if (rb) rb.value = date;
-  updateBookedDateStatus('detected', date);
+  if (prevDate && prevDate !== date) {
+    updateBookedDateStatus('corrected', date);
+  } else {
+    updateBookedDateStatus('detected', date);
+  }
   chrome.storage.local.get(['reschedule', 'config'], function(d) {
     var rs = d.reschedule || {};
     rs.bookedDate = date;
     var toSet = { reschedule: rs };
     var c = d.config || {};
-    if (c.mode === 'reschedule' && (opts.force || !c.bookedDate)) {
+    if (c.mode === 'reschedule') {
       c.bookedDate = date;
       c.dateTo = dayBefore(date);
       toSet.config = c;
@@ -138,40 +140,8 @@ function applyDetectedBookedDate(date, opts) {
 function wireBookedDateListener() {
   chrome.runtime.onMessage.addListener(function(msg) {
     if (msg && msg.type === 'BOOKED_DATE_DETECTED' && msg.date) {
-      applyDetectedBookedDate(msg.date);
+      applyDetectedBookedDate(msg.date, msg.prevDate || '');
     }
-  });
-}
-
-function wireFetchBooked() {
-  var btn = $('rsFetchBooked');
-  if (!btn) return;
-
-  function reset() {
-    setTimeout(function() { btn.textContent = '⟳ Re-fetch'; }, 2500);
-  }
-
-  btn.addEventListener('click', function() {
-    btn.textContent = 'Fetching...';
-    chrome.tabs.query({ url: 'https://ais.usvisa-info.com/*' }, function(tabs) {
-      if (!tabs || !tabs.length) {
-        btn.textContent = '✗ Site not open';
-        reset();
-        return;
-      }
-      chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_BOOKED_DATE' }, function(resp) {
-        if (chrome.runtime.lastError || !resp) {
-          btn.textContent = '✗ Page not ready';
-        } else if (resp.date) {
-          applyDetectedBookedDate(resp.date, { force: true });
-          btn.textContent = '✓ Found';
-        } else {
-          updateBookedDateStatus('error', 'Not found on page — log in first');
-          btn.textContent = '✗ Not found';
-        }
-        reset();
-      });
-    });
   });
 }
 
@@ -922,10 +892,9 @@ function startAutoRefresh() {
       updateNextCheck(data.monitoring, data.nextCheckAt);
       maybeShowBookingCelebration(data.lastBooking);
 
-      // If the booked date was auto-detected mid-run, surface it in the form.
       var rb = $('rsBookedDate');
       if (rb && data.reschedule && data.reschedule.bookedDate) {
-        if (!rb.value) rb.value = data.reschedule.bookedDate;
+        if (rb.value !== data.reschedule.bookedDate) rb.value = data.reschedule.bookedDate;
         if (data.config && data.config.mode === 'reschedule' && data.config.bookedDate) {
           updateBookedDateStatus('detected', data.config.bookedDate);
         }

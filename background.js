@@ -722,10 +722,10 @@ function triggerBookedDateDetection(tabId) {
   chrome.storage.local.get(['config', 'monitoring'], (d) => {
     if (!d.monitoring) return;
     const c = d.config || {};
-    if (c.mode !== 'reschedule' || c.bookedDate) return;
+    if (c.mode !== 'reschedule') return;
     chrome.tabs.sendMessage(tabId, { type: 'DETECT_BOOKED_DATE' }, (resp) => {
       if (chrome.runtime.lastError) return;
-      if (resp && resp.date) addLog('Booked date read from page: ' + resp.date);
+      if (resp && resp.date) addLog('Booked date from visa site: ' + resp.date);
     });
   });
 }
