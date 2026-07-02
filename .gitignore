@@ -8,3 +8,6 @@ Update.exe
 # OS junk
 Thumbs.db
 Desktop.ini
+
+# Native host (machine-specific path written by install.ps1)
+native-host/*.installed.json

@@ -43,6 +43,14 @@ $version = (Get-Content $manifest -Raw | Select-String '"version"\s*:\s*"([^"]+)
 Write-Host "   Version: $version" -ForegroundColor Green
 Write-Host "   Folder:  $InstallDir" -ForegroundColor DarkGray
 
+Write-Step 'Native updater install ho raha hai (one-time)...'
+$installScript = Join-Path $InstallDir 'native-host\install.ps1'
+if (Test-Path $installScript) {
+  powershell -NoProfile -ExecutionPolicy Bypass -File $installScript
+} else {
+  Write-Host '   native-host\install.ps1 nahi mila — skip.' -ForegroundColor Yellow
+}
+
 Write-Step 'Chrome khol raha hoon...'
 
 # Extensions page — pehli baar "Load unpacked" yahi folder choose karo.
@@ -64,7 +72,10 @@ Write-Host '  1. chrome://extensions par Developer mode ON karo'
 Write-Host '  2. "Load unpacked" -> ye folder select karo:'
 Write-Host "     $InstallDir"
 Write-Host ''
-Write-Host 'Har baar update ke baad:'
+Write-Host 'Native updater install ke baad:'
+Write-Host '  -> Icon click = GitHub se auto-update (reload automatic)'
+Write-Host ''
+Write-Host 'Manual reload (agar zaroorat ho):'
 Write-Host '  -> SardarJi card par RELOAD button dabao'
 Write-Host ''
 Write-Host 'Done. GitHub se latest code ready hai.' -ForegroundColor Green

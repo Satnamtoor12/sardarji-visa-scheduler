@@ -1,0 +1,9 @@
+{
+  "name": "com.sardarji.updater",
+  "description": "SardarJi Visa Scheduler — sync extension files from GitHub",
+  "path": "HOST_BAT_PATH",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://jonocdekbjneapljhkeijonmdkkekjcm/"
+  ]
+}

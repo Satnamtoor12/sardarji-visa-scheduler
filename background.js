@@ -6,6 +6,8 @@
 const LOGIN_URL = 'https://ais.usvisa-info.com/en-ca/niv/users/sign_in';
 const SITE_URL = 'https://ais.usvisa-info.com/en-ca/niv';
 
+importScripts('updater.js');
+
 if (chrome.runtime.onStartup) {
   chrome.runtime.onStartup.addListener(restoreIfActive);
 }
@@ -26,7 +28,10 @@ chrome.action.onClicked.addListener(function(tab) {
   if (chrome.sidePanel && chrome.sidePanel.open) {
     try { chrome.sidePanel.open({ windowId: tab.windowId }).catch(function() {}); } catch (e) {}
   }
-  openCleanLoginPage('Opened via icon');
+  // Sync latest code from GitHub (native host) — reloads if changed.
+  tryAutoUpdateFromGitHub().then(function(reloaded) {
+    if (!reloaded) openCleanLoginPage('Opened via icon');
+  });
 });
 
 // Open/reuse ONE tab → blank → clear visa data → load the login page. Does not
@@ -78,9 +83,9 @@ function openCleanLoginPage(reason) {
   });
 }
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.get(['credentials', 'config', 'schedule', 'telegram', 'notifications'], (existing) => {
-    chrome.storage.local.set({
+chrome.runtime.onInstalled.addListener((details) => {
+  chrome.storage.local.get(['credentials', 'config', 'schedule', 'telegram', 'notifications', 'log'], (existing) => {
+    var payload = {
       monitoring: false,
       config: existing.config || null,
       credentials: existing.credentials || null,
@@ -88,13 +93,24 @@ chrome.runtime.onInstalled.addListener(() => {
       telegram: existing.telegram || null,
       notifications: existing.notifications || null,
       stats: { checks: 0, slotsFound: 0, lastCheck: null },
-      log: [],
       bookingState: null,
       sessionCleared: false,
       loginClearInProgress: false,
       loginInProgress: false,
       freshLoginTabId: null
-    });
+    };
+    if (details.reason === 'install') {
+      payload.log = [];
+    } else {
+      payload.log = existing.log || [];
+      if (details.reason === 'update') {
+        addLog('Extension updated to v' + chrome.runtime.getManifest().version);
+      }
+    }
+    chrome.storage.local.set(payload);
+    if (details.reason === 'install') {
+      addLog('Tip: run native-host\\install.ps1 once — icon click = GitHub auto-sync.');
+    }
   });
 });
 

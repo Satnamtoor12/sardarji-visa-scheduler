@@ -181,6 +181,16 @@ h1 {
 
 .tab-hint b { color: #a6adc8; }
 
+.update-status {
+  font-size: 10px;
+  color: #6c7086;
+  margin-top: 2px;
+  min-height: 14px;
+}
+
+.update-status.ready { color: #a6e3a1; }
+.update-status.warn { color: #f9e2af; }
+
 .booked-status {
   font-size: 10px;
   line-height: 1.4;

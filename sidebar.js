@@ -52,8 +52,28 @@ function init() {
   wireJumpToBottom();
   setDateDefaults();
   loadSavedData();
+  probeAutoUpdateStatus();
   startAutoRefresh();
   startCountdownTimer();
+}
+
+function showUpdateStatus(state, text) {
+  var el = $('updateStatus');
+  if (!el) return;
+  el.className = 'update-status' + (state ? ' ' + state : '');
+  el.textContent = text || '';
+}
+
+function probeAutoUpdateStatus() {
+  var ver = (chrome.runtime.getManifest() || {}).version || '';
+  showUpdateStatus('', 'v' + ver + ' — icon click = GitHub sync');
+  chrome.runtime.sendNativeMessage('com.sardarji.updater', { action: 'ping' }, function(resp) {
+    if (chrome.runtime.lastError) {
+      showUpdateStatus('warn', 'v' + ver + ' — run native-host\\install.ps1 once');
+      return;
+    }
+    showUpdateStatus('ready', 'v' + ver + ' — auto-update ready');
+  });
 }
 
 // ===== Mode tabs =====
