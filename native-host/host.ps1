@@ -33,6 +33,44 @@ function Get-RepoRoot {
   return (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 }
 
+$ExtensionId = 'jonocdekbjneapljhkeijonmdkkekjcm'
+
+function Get-ChromeExtensionLoadPath {
+  $userData = Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data'
+  if (-not (Test-Path $userData)) { return $null }
+  foreach ($profile in Get-ChildItem $userData -Directory) {
+    $secPath = Join-Path $profile.FullName 'Secure Preferences'
+    if (-not (Test-Path $secPath)) { continue }
+    try {
+      $prefs = Get-Content $secPath -Raw -Encoding UTF8 | ConvertFrom-Json
+      $settings = $prefs.extensions.settings
+      if (-not $settings) { continue }
+      foreach ($prop in $settings.PSObject.Properties) {
+        if ($prop.Name -ne $ExtensionId) { continue }
+        $loadPath = [string]$prop.Value.path
+        if ($loadPath -and (Test-Path (Join-Path $loadPath 'manifest.json'))) {
+          return $loadPath
+        }
+      }
+    } catch { }
+  }
+  return $null
+}
+
+function Sync-RepoToChromeLoadPath([string]$Repo) {
+  $dest = Get-ChromeExtensionLoadPath
+  if (-not $dest) { return $false }
+  $repoNorm = (Resolve-Path $Repo).Path
+  $destNorm = (Resolve-Path $dest).Path
+  if ($repoNorm -eq $destNorm) { return $false }
+
+  $robocopy = Join-Path $env:SystemRoot 'System32\robocopy.exe'
+  & $robocopy $repoNorm $destNorm /E /XD .git /XF com.sardarji.updater.installed.json `
+    /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+  $code = $LASTEXITCODE
+  return ($code -ge 1 -and $code -le 7)
+}
+
 try {
   $msg = Read-Message
   if (-not $msg) {
@@ -56,11 +94,16 @@ try {
   $before = ''
   try { $before = (git rev-parse HEAD 2>$null).Trim() } catch { $before = '' }
 
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
   git fetch origin main 2>&1 | Out-Null
   git reset --hard origin/main 2>&1 | Out-Null
+  $ErrorActionPreference = $prevEap
 
   $after = (git rev-parse HEAD).Trim()
-  $changed = ($before -ne $after)
+  $gitChanged = ($before -ne $after)
+  $copyChanged = Sync-RepoToChromeLoadPath $repo
+  $changed = $gitChanged -or $copyChanged
 
   $version = '0.0.0'
   $manifestPath = Join-Path $repo 'manifest.json'
@@ -76,7 +119,7 @@ try {
     changed = $changed
     version = $version
     commit  = $after
-    message = if ($changed) { "Updated to v$version" } else { 'Already up to date' }
+    message = if ($gitChanged) { "Updated to v$version" } elseif ($copyChanged) { "Synced files to Chrome load folder (v$version)" } else { 'Already up to date' }
   }
 }
 catch {

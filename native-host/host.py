@@ -3,9 +3,14 @@
 
 import json
 import os
+import platform
+import shutil
 import struct
 import subprocess
 import sys
+
+EXTENSION_ID = 'jonocdekbjneapljhkeijonmdkkekjcm'
+SKIP_COPY_NAMES = {'.git', 'com.sardarji.updater.installed.json'}
 
 
 def read_message():
@@ -56,6 +61,66 @@ def run_git(args, cwd):
         raise RuntimeError('git not found — install Xcode CLI tools or git')
 
 
+def chrome_user_data_dir():
+    system = platform.system()
+    if system == 'Darwin':
+        return os.path.expanduser('~/Library/Application Support/Google/Chrome')
+    if system == 'Windows':
+        return os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Google', 'Chrome', 'User Data')
+    return os.path.expanduser('~/.config/google-chrome')
+
+
+def chrome_extension_load_path():
+    base = chrome_user_data_dir()
+    if not base or not os.path.isdir(base):
+        return None
+    for profile in os.listdir(base):
+        sec_path = os.path.join(base, profile, 'Secure Preferences')
+        if not os.path.isfile(sec_path):
+            continue
+        try:
+            with open(sec_path, 'r', encoding='utf-8') as fh:
+                prefs = json.load(fh)
+            ext = prefs.get('extensions', {}).get('settings', {}).get(EXTENSION_ID, {})
+            load_path = ext.get('path')
+            if load_path and os.path.isfile(os.path.join(load_path, 'manifest.json')):
+                return load_path
+        except (OSError, json.JSONDecodeError, TypeError):
+            continue
+    return None
+
+
+def sync_repo_to_chrome_load_path(repo):
+    dest = chrome_extension_load_path()
+    if not dest:
+        return False
+    repo_norm = os.path.normcase(os.path.abspath(repo))
+    dest_norm = os.path.normcase(os.path.abspath(dest))
+    if repo_norm == dest_norm:
+        return False
+
+    changed = False
+    for root, dirs, files in os.walk(repo):
+        dirs[:] = [d for d in dirs if d not in SKIP_COPY_NAMES]
+        rel = os.path.relpath(root, repo)
+        target_root = dest if rel == '.' else os.path.join(dest, rel)
+        os.makedirs(target_root, exist_ok=True)
+        for name in files:
+            if name in SKIP_COPY_NAMES:
+                continue
+            src = os.path.join(root, name)
+            dst = os.path.join(target_root, name)
+            if not os.path.isfile(dst) or os.path.getmtime(src) > os.path.getmtime(dst):
+                shutil.copy2(src, dst)
+                changed = True
+            else:
+                with open(src, 'rb') as sf, open(dst, 'rb') as df:
+                    if sf.read() != df.read():
+                        shutil.copy2(src, dst)
+                        changed = True
+    return changed
+
+
 def do_update():
     repo = repo_root()
     before = git_output(['rev-parse', 'HEAD'], repo)
@@ -65,7 +130,9 @@ def do_update():
     if not after:
         raise RuntimeError('git update failed')
 
-    changed = before != after
+    git_changed = before != after
+    copy_changed = sync_repo_to_chrome_load_path(repo)
+    changed = git_changed or copy_changed
     version = '0.0.0'
     manifest_path = os.path.join(repo, 'manifest.json')
     if os.path.isfile(manifest_path):
@@ -73,12 +140,19 @@ def do_update():
             manifest = json.load(fh)
             version = str(manifest.get('version', version))
 
+    if git_changed:
+        message = 'Updated to v' + version
+    elif copy_changed:
+        message = 'Synced files to Chrome load folder (v' + version + ')'
+    else:
+        message = 'Already up to date'
+
     return {
         'success': True,
         'changed': changed,
         'version': version,
         'commit': after,
-        'message': 'Updated to v' + version if changed else 'Already up to date'
+        'message': message
     }
 
 

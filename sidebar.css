@@ -139,7 +139,7 @@ h1 {
 
 .celebration-close:hover { color: #f38ba8; }
 
-/* Mode tabs (New Booking / Reschedule) */
+/* Mode tabs (Schedule / Reschedule) */
 .tab-bar {
   display: flex;
   gap: 4px;

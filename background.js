@@ -80,11 +80,22 @@ function forceExtensionReload(reason, targetVersion) {
 
 function syncFromGitHubAndMaybeReload(localVersion) {
   return tryNativePing().then(function(ready) {
-    if (!ready) return false;
+    if (!ready) {
+      addLog('Auto-update skipped — run native-host\\install.ps1 once, then reload extension.');
+      return false;
+    }
     return tryNativeGitHubSync().then(function(native) {
-      if (!native.ok || !native.resp || !native.resp.success || !native.resp.changed) return false;
+      if (!native.ok || !native.resp || !native.resp.success) {
+        addLog('Auto-update failed — ' + ((native.resp && native.resp.error) || 'native host error'));
+        return false;
+      }
+      if (!native.resp.changed) {
+        addLog('Auto-update: already up to date (v' + localVersion + ').');
+        return false;
+      }
       var newVer = native.resp.version || localVersion;
-      addLog('GitHub sync complete (v' + newVer + ').');
+      var msg = native.resp.message || ('Updated to v' + newVer);
+      addLog('Auto-update: ' + msg);
       return forceExtensionReload('Updated to v' + newVer + ' — reloading...', newVer);
     });
   });
