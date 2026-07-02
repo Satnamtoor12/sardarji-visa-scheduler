@@ -17,6 +17,12 @@
       <span id="status-text">Idle</span>
     </div>
 
+    <!-- CAPTCHA pause — resume after manual login -->
+    <div id="captchaBanner" class="captcha-banner" style="display:none">
+      <div class="captcha-banner-text">CAPTCHA blocked auto-login. Log in manually in the visa tab, then resume.</div>
+      <button id="resumeBtn" class="btn btn-resume">RESUME MONITORING</button>
+    </div>
+
     <!-- Booking celebration -->
     <div id="bookingCelebration" class="celebration" style="display:none">
       <div class="celebration-emoji">🎉</div>
@@ -221,12 +227,42 @@
         </div>
       </div>
 
+      <!-- Preferred appointment time (optional) -->
+      <div class="section-group">
+        <div class="section-header">Preferred Time (optional)</div>
+        <div class="row">
+          <div class="section half">
+            <label>Earliest time</label>
+            <input type="time" id="timeFrom" value="">
+          </div>
+          <div class="section half">
+            <label>Latest time</label>
+            <input type="time" id="timeTo" value="">
+          </div>
+        </div>
+        <div class="hint">Leave blank for any time. Used when alerting and auto-booking.</div>
+      </div>
+
+      <!-- Backup -->
+      <div class="section-group">
+        <div class="section-header">Backup</div>
+        <div class="row backup-btns">
+          <button id="exportSettings" class="btn-small">Export Settings</button>
+          <label class="btn-small import-label">
+            Import Settings
+            <input type="file" id="importSettings" accept=".json,application/json" hidden>
+          </label>
+        </div>
+        <div class="hint">Saves credentials and preferences to a JSON file.</div>
+      </div>
+
       <!-- Notifications -->
       <div class="section-group">
         <div class="section-header">Notifications</div>
         <div class="section checkbox-row">
           <input type="checkbox" id="soundEnabled" checked>
           <label for="soundEnabled">Sound on slot found</label>
+          <button id="testSound" class="btn-small btn-inline">Test Sound</button>
         </div>
         <div class="section checkbox-row">
           <input type="checkbox" id="desktopNotif" checked>
@@ -250,6 +286,16 @@
       <span id="slotsFound">Found: 0</span>
       <span id="lastCheck">Last: --</span>
     </div>
+    <div id="nextCheckRow" class="next-check">Next check: --</div>
+
+    <!-- Slot history -->
+    <div class="section slot-history-section">
+      <div class="log-header">
+        <label>Slot History</label>
+        <span id="clearHistory" class="copy-btn" title="Clear">Clear</span>
+      </div>
+      <div id="slotHistoryBox" class="slot-history-box">No slots detected yet.</div>
+    </div>
 
     <!-- Activity log -->
     <div class="section">
@@ -266,7 +312,7 @@
     <div class="disclaimer">
       You are responsible for compliance with the website's Terms of Service.
     </div>
-    <div class="footer">SardarJi v1.0</div>
+    <div class="footer">SardarJi v1.1</div>
   </div>
 
   <script src="sidebar.js"></script>

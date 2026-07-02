@@ -531,3 +531,94 @@ body::-webkit-scrollbar-thumb {
   margin-top: 8px;
   padding: 6px 0;
 }
+
+/* CAPTCHA resume banner */
+.captcha-banner {
+  background: #3b2e1e;
+  border: 1px solid #fab387;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.captcha-banner-text {
+  font-size: 11px;
+  color: #fab387;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.btn-resume {
+  width: 100%;
+  padding: 8px;
+  background: #fab387;
+  color: #1e1e2e;
+  border: none;
+  border-radius: 7px;
+  font-weight: 700;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn-resume:hover { background: #f9a66c; }
+
+/* Next check countdown */
+.next-check {
+  text-align: center;
+  font-size: 11px;
+  color: #89b4fa;
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding: 4px 0;
+}
+
+/* Slot history */
+.slot-history-section {
+  margin-bottom: 8px;
+}
+
+.slot-history-box {
+  background: #181825;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  max-height: 72px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  font-size: 10px;
+  color: #a6adc8;
+  line-height: 1.5;
+}
+
+.slot-history-box .hist-entry {
+  border-bottom: 1px solid #313244;
+  padding: 2px 0;
+}
+
+.slot-history-box .hist-entry:last-child {
+  border-bottom: none;
+}
+
+/* Backup + inline buttons */
+.backup-btns {
+  gap: 8px;
+  align-items: center;
+}
+
+.import-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin: 0;
+}
+
+.btn-inline {
+  margin-left: auto;
+  padding: 4px 10px;
+  font-size: 10px;
+}
+
+.checkbox-row {
+  flex-wrap: wrap;
+}

@@ -38,7 +38,11 @@ function init() {
   wireConditionalFields();
   wirePasswordToggle();
   wireTestTelegram();
+  wireTestSound();
   wireSaveAdvanced();
+  wireExportImport();
+  wireResumeCaptcha();
+  wireClearHistory();
   wireCopyLog();
   wireStartButton();
   wireStopButton();
@@ -48,6 +52,7 @@ function init() {
   setDateDefaults();
   loadSavedData();
   startAutoRefresh();
+  startCountdownTimer();
 }
 
 // ===== Mode tabs =====
@@ -237,6 +242,176 @@ function wirePasswordToggle() {
   });
 }
 
+// ===== Sound test =====
+function wireTestSound() {
+  var btn = $('testSound');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    btn.textContent = 'Playing...';
+    chrome.runtime.sendMessage({ type: 'TEST_SOUND' }, function() {
+      btn.textContent = '✓ Played';
+      setTimeout(function() { btn.textContent = 'Test Sound'; }, 2000);
+    });
+  });
+}
+
+// ===== Export / import settings =====
+function wireExportImport() {
+  var exportBtn = $('exportSettings');
+  var importInput = $('importSettings');
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', function() {
+      chrome.storage.local.get(
+        ['credentials', 'config', 'schedule', 'telegram', 'notifications', 'reschedule', 'activeTab'],
+        function(data) {
+          var payload = {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            credentials: data.credentials || null,
+            config: data.config || null,
+            schedule: data.schedule || null,
+            telegram: data.telegram || null,
+            notifications: data.notifications || null,
+            reschedule: data.reschedule || null,
+            activeTab: data.activeTab || 'new'
+          };
+          var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = 'sardarji-settings-' + localISODate(new Date()) + '.json';
+          a.click();
+          URL.revokeObjectURL(url);
+          exportBtn.textContent = '✓ Exported';
+          setTimeout(function() { exportBtn.textContent = 'Export Settings'; }, 2000);
+        }
+      );
+    });
+  }
+
+  if (importInput) {
+    importInput.addEventListener('change', function(e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function() {
+        try {
+          var data = JSON.parse(reader.result);
+          if (!data || typeof data !== 'object') throw new Error('Invalid file');
+          if (!confirm('Import settings? This will overwrite your saved credentials and preferences.')) return;
+          var toSet = {};
+          if (data.credentials) toSet.credentials = data.credentials;
+          if (data.config) toSet.config = data.config;
+          if (data.schedule) toSet.schedule = data.schedule;
+          if (data.telegram) toSet.telegram = data.telegram;
+          if (data.notifications) toSet.notifications = data.notifications;
+          if (data.reschedule) toSet.reschedule = data.reschedule;
+          if (data.activeTab) toSet.activeTab = data.activeTab;
+          chrome.storage.local.set(toSet, function() {
+            loadSavedData();
+            alert('Settings imported successfully.');
+          });
+        } catch (err) {
+          alert('Import failed: ' + (err.message || 'invalid JSON'));
+        }
+        importInput.value = '';
+      };
+      reader.readAsText(file);
+    });
+  }
+}
+
+// ===== CAPTCHA resume =====
+function wireResumeCaptcha() {
+  var btn = $('resumeBtn');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    btn.disabled = true;
+    btn.textContent = 'Resuming...';
+    chrome.runtime.sendMessage({ type: 'RESUME_MONITORING' }, function() {
+      chrome.storage.local.get(['monitoring', 'config'], function(d) {
+        updateStatus(d.monitoring, d.config);
+        updateCaptchaBanner(null);
+        btn.disabled = false;
+        btn.textContent = 'RESUME MONITORING';
+      });
+    });
+  });
+}
+
+function updateCaptchaBanner(pausedState) {
+  var banner = $('captchaBanner');
+  if (!banner) return;
+  if (pausedState && pausedState.reason === 'captcha') {
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+// ===== Slot history =====
+function wireClearHistory() {
+  var btn = $('clearHistory');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    if (!confirm('Clear slot history?')) return;
+    chrome.storage.local.set({ slotHistory: [] }, function() {
+      updateSlotHistory([]);
+    });
+  });
+}
+
+function updateSlotHistory(history) {
+  var box = $('slotHistoryBox');
+  if (!box) return;
+  if (!history || !history.length) {
+    box.textContent = 'No slots detected yet.';
+    return;
+  }
+  var html = '';
+  var start = Math.max(0, history.length - 10);
+  for (var i = history.length - 1; i >= start; i--) {
+    var e = history[i];
+    var when = new Date(e.ts).toLocaleString();
+    var timePart = e.time ? ' @ ' + e.time : '';
+    html += '<div class="hist-entry">' + e.date + timePart + ' — ' + e.facility +
+            ' <span style="color:#6c7086">(' + when + ')</span></div>';
+  }
+  box.innerHTML = html;
+}
+
+function formatCountdown(ms) {
+  if (ms <= 0) return 'now';
+  var sec = Math.ceil(ms / 1000);
+  if (sec < 60) return sec + 's';
+  var min = Math.floor(sec / 60);
+  var rem = sec % 60;
+  if (min < 60) return min + 'm ' + rem + 's';
+  var hr = Math.floor(min / 60);
+  min = min % 60;
+  return hr + 'h ' + min + 'm';
+}
+
+function updateNextCheck(monitoring, nextCheckAt) {
+  var row = $('nextCheckRow');
+  if (!row) return;
+  if (!monitoring || !nextCheckAt) {
+    row.textContent = 'Next check: --';
+    return;
+  }
+  var left = nextCheckAt - Date.now();
+  row.textContent = 'Next check: ' + (left > 0 ? formatCountdown(left) : 'now...');
+}
+
+function startCountdownTimer() {
+  setInterval(function() {
+    chrome.storage.local.get(['monitoring', 'nextCheckAt'], function(d) {
+      updateNextCheck(d.monitoring, d.nextCheckAt);
+    });
+  }, 1000);
+}
+
 // ===== Telegram test =====
 function wireTestTelegram() {
   var btn = $('testTelegram');
@@ -304,6 +479,8 @@ function wireSaveAdvanced() {
     chrome.storage.local.get(['config'], function(d) {
       var config = d.config || {};
       config.facilities = facilities;
+      config.timeFrom = ($('timeFrom') || {}).value || '';
+      config.timeTo = ($('timeTo') || {}).value || '';
       chrome.storage.local.set({
         config: config,
         schedule: schedule,
@@ -410,7 +587,9 @@ function startNewBooking() {
       dateTo: dateTo,
       intervalMin: minInt,
       intervalMax: Math.max(maxInt, minInt),
-      autoBook: autoBook
+      autoBook: autoBook,
+      timeFrom: ($('timeFrom') || {}).value || oldConfig.timeFrom || '',
+      timeTo: ($('timeTo') || {}).value || oldConfig.timeTo || ''
     };
 
     chrome.runtime.sendMessage({ type: 'START_MONITORING', config: config }, function() {
@@ -473,7 +652,9 @@ function startReschedule() {
       dateTo: dateTo,
       intervalMin: minInt,
       intervalMax: Math.max(maxInt, minInt),
-      autoBook: autoBook
+      autoBook: autoBook,
+      timeFrom: ($('timeFrom') || {}).value || oldConfig.timeFrom || '',
+      timeTo: ($('timeTo') || {}).value || oldConfig.timeTo || ''
     };
 
     chrome.runtime.sendMessage({ type: 'START_MONITORING', config: config }, function() {
@@ -490,6 +671,8 @@ function wireStopButton() {
   btn.addEventListener('click', function() {
     chrome.runtime.sendMessage({ type: 'STOP_MONITORING' }, function() {
       updateStatus(false);
+      updateCaptchaBanner(null);
+      updateNextCheck(false, null);
     });
   });
 }
@@ -511,7 +694,7 @@ function setDateDefaults() {
 // ===== Load saved data =====
 function loadSavedData() {
   chrome.storage.local.get(
-    ['monitoring', 'config', 'stats', 'log', 'credentials', 'schedule', 'telegram', 'notifications', 'lastBooking', 'reschedule', 'activeTab'],
+    ['monitoring', 'config', 'stats', 'log', 'credentials', 'schedule', 'telegram', 'notifications', 'lastBooking', 'reschedule', 'activeTab', 'pausedState', 'slotHistory', 'nextCheckAt'],
     function(data) {
       if (data.credentials) {
         if ($('email')) $('email').value = data.credentials.email || '';
@@ -525,6 +708,8 @@ function loadSavedData() {
         if ($('intervalMin')) $('intervalMin').value = data.config.intervalMin || 60;
         if ($('intervalMax')) $('intervalMax').value = data.config.intervalMax || 120;
         if ($('autoBook')) $('autoBook').checked = !!data.config.autoBook;
+        if ($('timeFrom')) $('timeFrom').value = data.config.timeFrom || '';
+        if ($('timeTo')) $('timeTo').value = data.config.timeTo || '';
 
         if (data.config.facilities) {
           var ids = data.config.facilities.map(function(f) { return f.id; });
@@ -578,6 +763,9 @@ function loadSavedData() {
       updateStatus(data.monitoring, data.config);
       updateStats(data.stats);
       updateLog(data.log);
+      updateSlotHistory(data.slotHistory);
+      updateCaptchaBanner(data.pausedState);
+      updateNextCheck(data.monitoring, data.nextCheckAt);
       maybeShowBookingCelebration(data.lastBooking);
     }
   );
@@ -666,10 +854,13 @@ function wireJumpToBottom() {
 // ===== Auto refresh =====
 function startAutoRefresh() {
   setInterval(function() {
-    chrome.storage.local.get(['monitoring', 'stats', 'log', 'lastBooking', 'config', 'reschedule'], function(data) {
+    chrome.storage.local.get(['monitoring', 'stats', 'log', 'lastBooking', 'config', 'reschedule', 'pausedState', 'slotHistory', 'nextCheckAt'], function(data) {
       updateStatus(data.monitoring, data.config);
       updateStats(data.stats);
       updateLog(data.log);
+      updateSlotHistory(data.slotHistory);
+      updateCaptchaBanner(data.pausedState);
+      updateNextCheck(data.monitoring, data.nextCheckAt);
       maybeShowBookingCelebration(data.lastBooking);
 
       // If the booked date was auto-detected mid-run, surface it in the form.

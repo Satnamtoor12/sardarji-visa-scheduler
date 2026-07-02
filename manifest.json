@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SardarJi Appointment Scheduler",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Smart visa appointment slot monitor and scheduler",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuvRs5049YQaYJk/OjvLfK53pmWoTUZMW6cZtnepph8m5GRVepGhJYTQd7xIScjGU3uCF8XVKxwvWPf/FJ7jZCe8OWU9dDC9gE31X5I+42r2Vyn/X6B62AyHhvd6Tkrej3Do6qQSdPkjgUbSxlM/ElaM3dRdKr94xiEeB1bBbur82qWz3p09kBzR6D4LvoyYb+zMjejPPqQ2EvA3gdKsKx/eS4g9tPtDp6ZvgfHLr+SxQTYByDUQzsKbjtU0uEfOqkTxin3J+rl7rg9WPdcKODGnjQHuvfHbUI9ttX6u1zwaq3bjCe9jr5MU6DM1KBtrV0ziNmB82pwKS0QKZEQ+QoQIDAQAB",
   "permissions": [

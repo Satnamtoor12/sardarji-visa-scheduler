@@ -489,6 +489,41 @@
     }
   }
 
+  // ==================== PREFERRED TIME ====================
+
+  function timeToMinutes(t) {
+    if (!t) return null;
+    const s = String(t).trim();
+    const m24 = s.match(/^(\d{1,2}):(\d{2})$/);
+    if (m24) return parseInt(m24[1], 10) * 60 + parseInt(m24[2], 10);
+    const m12 = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (m12) {
+      let h = parseInt(m12[1], 10);
+      const min = parseInt(m12[2], 10);
+      if (m12[3].toUpperCase() === 'PM' && h < 12) h += 12;
+      if (m12[3].toUpperCase() === 'AM' && h === 12) h = 0;
+      return h * 60 + min;
+    }
+    return null;
+  }
+
+  function filterTimesByPreference(times, config) {
+    if (!config || (!config.timeFrom && !config.timeTo)) return times;
+    const from = config.timeFrom ? timeToMinutes(config.timeFrom) : 0;
+    const to = config.timeTo ? timeToMinutes(config.timeTo) : 24 * 60;
+    if (from == null || to == null) return times;
+    const filtered = times.filter((t) => {
+      const m = timeToMinutes(t);
+      return m != null && m >= from && m <= to;
+    });
+    return filtered.length ? filtered : times;
+  }
+
+  function pickPreferredTime(times, config) {
+    const pool = filterTimesByPreference(times, config);
+    return pool[0] || null;
+  }
+
   // ==================== SLOT CHECK ====================
 
   async function checkSlots(config) {
@@ -625,7 +660,8 @@
         let confirmedTimes = null;
         for (const d of matching) {
           const t = await getTimesForDate(scheduleId, fac.id, d);
-          if (t && t.length) { confirmedDate = d; confirmedTimes = t; break; }
+          const preferred = t && t.length ? pickPreferredTime(t, config) : null;
+          if (preferred) { confirmedDate = d; confirmedTimes = filterTimesByPreference(t, config); break; }
           await delay(800 + Math.random() * 700);
         }
 
@@ -635,17 +671,18 @@
           continue;
         }
 
+        const slotTime = confirmedTimes[0];
         totalFound += 1;
-        log('FOUND (bookable) ' + fac.name + ': ' + confirmedDate + ' @ ' + confirmedTimes[0]);
+        log('FOUND (bookable) ' + fac.name + ': ' + confirmedDate + ' @ ' + slotTime);
 
         chrome.runtime.sendMessage({
           type: 'SLOT_FOUND',
-          data: { date: confirmedDate, time: confirmedTimes[0], facility: fac.name, facilityId: fac.id, allDates: matching }
+          data: { date: confirmedDate, time: slotTime, facility: fac.name, facilityId: fac.id, allDates: matching }
         });
 
         // Track earliest confirmed-bookable slot across all facilities
         if (!bestSlot || confirmedDate < bestSlot.date) {
-          bestSlot = { date: confirmedDate, time: confirmedTimes[0], facilityId: fac.id, facilityName: fac.name };
+          bestSlot = { date: confirmedDate, time: slotTime, facilityId: fac.id, facilityName: fac.name };
         }
 
       } catch (err) {
@@ -665,7 +702,7 @@
     if (bestSlot && config.autoBook) {
       // Book the earliest slot found across all facilities
       const bookConfig = { ...config, facilityId: bestSlot.facilityId, facilityName: bestSlot.facilityName };
-      startBooking(bookConfig, bestSlot.date);
+      startBooking(bookConfig, bestSlot.date, bestSlot.time);
     } else {
       done(totalFound);
     }
@@ -673,7 +710,7 @@
 
   // ==================== BOOKING ====================
 
-  async function startBooking(config, date) {
+  async function startBooking(config, date, preferredTime) {
     // Reschedule mode: never book a date that isn't earlier than the current
     // appointment — that would move the booking BACKWARD.
     if (config.bookedDate && date >= config.bookedDate) {
@@ -709,7 +746,14 @@
         return;
       }
 
-      const time = times[0];
+      const time = preferredTime && times.indexOf(preferredTime) !== -1
+        ? preferredTime
+        : pickPreferredTime(times, config);
+      if (!time) {
+        log('No preferred time for ' + date);
+        done(1);
+        return;
+      }
       log('Time: ' + time + '. Going to form...');
 
       // Save state and navigate
@@ -738,8 +782,8 @@
     if (state.step === 'fill-form' && url.includes('/appointment')) {
       log('Filling booking form...');
       waitForEl('#appointments_consulate_appointment_facility_id', 10000)
-        .then(() => fillBookingForm(state))
-        .catch(() => fillBookingForm(state));   // try anyway if selector differs
+        .then(() => fillBookingForm(state, config))
+        .catch(() => fillBookingForm(state, config));   // try anyway if selector differs
     }
     else if (state.step === 'confirm') {
       log('Confirming booking...');
@@ -761,7 +805,7 @@
     chrome.runtime.sendMessage({ type: 'BOOKING_RESULT', data: { success: false, reason: reason } });
   }
 
-  async function fillBookingForm(state) {
+  async function fillBookingForm(state, config) {
     try {
       if (aborted) return;
 
@@ -812,8 +856,11 @@
         done(0);
         return;
       }
-      // Prefer the exact time we found, else the earliest available.
-      const chosen = realTimes.indexOf(state.time) !== -1 ? state.time : realTimes[0];
+      // Prefer the exact time we found, else the best match in the preferred window.
+      const inWindow = filterTimesByPreference(realTimes, config);
+      const chosen = realTimes.indexOf(state.time) !== -1
+        ? state.time
+        : (inWindow[0] || realTimes[0]);
       timeSelect.value = chosen;
       state.time = chosen;
       timeSelect.dispatchEvent(new Event('change', { bubbles: true }));

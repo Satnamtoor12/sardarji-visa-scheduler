@@ -121,7 +121,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: true });
       break;
     case 'STOP_MONITORING':
+      chrome.storage.local.remove('pausedState');
       stopMonitoring();
+      sendResponse({ ok: true });
+      break;
+    case 'RESUME_MONITORING':
+      resumeMonitoring();
+      sendResponse({ ok: true });
+      break;
+    case 'TEST_SOUND':
+      playSound(true);
       sendResponse({ ok: true });
       break;
     case 'GET_STATUS':
@@ -143,6 +152,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       addLog('Rate limited! Waiting 30 min before next check.');
       sendTelegram('⚠️ <b>Rate Limited!</b>\nPausing for 30 minutes.');
       chrome.alarms.create('check-slots', { delayInMinutes: 30 });
+      chrome.storage.local.set({ nextCheckAt: Date.now() + 30 * 60 * 1000 });
       sendResponse({ ok: true });
       break;
     case 'PAGE_READY':
@@ -245,7 +255,8 @@ function startMonitoring(config) {
       alertedSlots: {},
       loginAttempts: 0,
       loginClearInProgress: false,
-      loginInProgress: false
+      loginInProgress: false,
+      pausedState: null
     });
     if (config.mode === 'reschedule') {
       addLog('Reschedule mode: ' + config.facilityName + ' — hunting dates BEFORE ' +
@@ -535,8 +546,16 @@ function handleLoginFailed(reason) {
   if (fatal) {
     chrome.storage.local.set({ loginAttempts: 0 });
     if (r.includes('captcha')) {
-      addLog('CAPTCHA on login page — cannot log in automatically. Log in manually once, then restart.');
-      sendTelegram('🔴 <b>CAPTCHA blocked login</b>\n' + msg + '\nLog in manually, then restart monitoring.');
+      chrome.storage.local.get(['config'], (d) => {
+        chrome.storage.local.set({
+          pausedState: { reason: 'captcha', config: d.config || null, at: Date.now() }
+        }, () => {
+          addLog('CAPTCHA on login page — log in manually in the visa tab, then press Resume.');
+          sendTelegram('🔴 <b>CAPTCHA blocked login</b>\n' + msg + '\nLog in manually, then press Resume in the sidebar.');
+          stopMonitoring();
+        });
+      });
+      return;
     } else {
       addLog('STOPPED — login rejected by website: "' + msg + '". No retry. Fix credentials, then start again.');
       sendTelegram('🔴 <b>Login failed</b>\nWebsite said: ' + msg + '\nMonitoring stopped — fix credentials and restart.');
@@ -581,6 +600,32 @@ function beginMonitoringLoop() {
   triggerCheck();
 }
 
+function resumeMonitoring() {
+  chrome.storage.local.get(['pausedState', 'credentials'], (d) => {
+    const ps = d.pausedState;
+    if (!ps || !ps.config) {
+      addLog('Nothing to resume — press START to begin.');
+      return;
+    }
+    if (!d.credentials) {
+      addLog('No credentials saved. Enter email/password first.');
+      return;
+    }
+    chrome.storage.local.set({
+      monitoring: true,
+      config: ps.config,
+      pausedState: null,
+      loginInProgress: false,
+      loginClearInProgress: false,
+      loginAttempts: 0,
+      loginPagePrepared: false
+    }, () => {
+      addLog('Resumed monitoring (session kept — no cookie clear).');
+      beginMonitoringLoop();
+    });
+  });
+}
+
 function stopMonitoring() {
   chrome.alarms.clear('check-slots');
   chrome.alarms.clear('keep-alive');
@@ -591,7 +636,8 @@ function stopMonitoring() {
     loginClearInProgress: false,
     loginAttempts: 0,
     freshLoginTabId: null,
-    loginPagePrepared: false
+    loginPagePrepared: false,
+    nextCheckAt: null
   });
   // Tell any open visa tab to abort an in-progress login/booking immediately.
   chrome.tabs.query({ url: 'https://ais.usvisa-info.com/*' }, (tabs) => {
@@ -642,6 +688,7 @@ function scheduleNext() {
     }
     const minutes = sec / 60;   // chrome.alarms takes minutes
     chrome.alarms.create('check-slots', { delayInMinutes: minutes });
+    chrome.storage.local.set({ nextCheckAt: Date.now() + sec * 1000 });
     addLog('Next check in ~' + Math.round(sec) + ' sec');
 
     // Only ping if the gap is big enough that the session could time out.
@@ -845,7 +892,19 @@ function handleSlotFound(data) {
     }
 
     alerted[key] = now;
-    chrome.storage.local.set({ alertedSlots: alerted });
+
+    const entry = {
+      date: data.date,
+      time: data.time || '',
+      facility: data.facility,
+      ts: now
+    };
+    chrome.storage.local.get(['slotHistory'], (hist) => {
+      const history = hist.slotHistory || [];
+      history.push(entry);
+      if (history.length > 50) history.splice(0, history.length - 50);
+      chrome.storage.local.set({ alertedSlots: alerted, slotHistory: history });
+    });
 
     notifyDesktop('slot-' + Date.now(), {
       type: 'basic',
@@ -921,10 +980,12 @@ function handleBookingResult(data) {
 
 // ==================== UTILS ====================
 
-async function playSound() {
+async function playSound(force) {
   try {
-    const pref = await chrome.storage.local.get(['notifications']);
-    if (pref.notifications && pref.notifications.sound === false) return;
+    if (!force) {
+      const pref = await chrome.storage.local.get(['notifications']);
+      if (pref.notifications && pref.notifications.sound === false) return;
+    }
     const ctx = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
     if (ctx.length === 0) {
       await chrome.offscreen.createDocument({
