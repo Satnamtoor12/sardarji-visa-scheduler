@@ -177,11 +177,12 @@
     await delay(1500 + Math.random() * 1500);
 
     // 1. Expand accordion if needed (if it's not already expanded)
-    // The header usually has an icon or is an h5/a tag without a specific appointment href
+    // The header usually has an icon or is an h5/a tag without a specific appointment href.
+    // With an existing booking the site labels it "Reschedule Appointment" instead.
     const allLinks = document.querySelectorAll('a, h5, .accordion-title, .accordion-item');
     for (const el of allLinks) {
       const txt = (el.textContent || '').trim().toLowerCase();
-      if (txt === 'schedule appointment' && !el.href?.includes('/appointment')) {
+      if ((txt === 'schedule appointment' || txt === 'reschedule appointment') && !el.href?.includes('/appointment')) {
         // Try clicking to expand, but don't wait too long
         try { el.click(); } catch (e) {}
       }
@@ -579,7 +580,11 @@
         // cancellations happening (a date opening/closing), even out of range.
         await noteEarliest(fac.id, fac.name, allDates[0] || null);
 
-        const matching = allDates.filter(d => d >= config.dateFrom && d <= config.dateTo);
+        let matching = allDates.filter(d => d >= config.dateFrom && d <= config.dateTo);
+        // Reschedule mode safety net: only dates strictly BEFORE the existing
+        // booking count (dateTo already enforces this; double-guard anyway so a
+        // stale/edited config can never "reschedule" to a later date).
+        if (config.bookedDate) matching = matching.filter(d => d < config.bookedDate);
 
         if (matching.length === 0) {
           await delay(1500 + Math.random() * 2000);
@@ -642,6 +647,13 @@
   // ==================== BOOKING ====================
 
   async function startBooking(config, date) {
+    // Reschedule mode: never book a date that isn't earlier than the current
+    // appointment — that would move the booking BACKWARD.
+    if (config.bookedDate && date >= config.bookedDate) {
+      log('Skip booking ' + date + ' — not earlier than current booking ' + config.bookedDate);
+      done(0);
+      return;
+    }
     log('Booking ' + date + '...');
     const scheduleId = config.scheduleId || findScheduleId(config);
     if (!scheduleId) { log('No schedule ID'); return; }

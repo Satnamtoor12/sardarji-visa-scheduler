@@ -48,45 +48,99 @@
       </div>
     </div>
 
-    <!-- Appointment section -->
-    <div class="section-group">
-      <div class="section-header">Appointment</div>
-      <div class="section">
-        <label>Primary Facility</label>
-        <select id="facility">
-          <option value="">-- Select --</option>
-          <option value="89">Calgary</option>
-          <option value="90">Halifax</option>
-          <option value="91">Montreal</option>
-          <option value="92">Ottawa</option>
-          <option value="93">Quebec City</option>
-          <option value="94">Toronto</option>
-          <option value="95">Vancouver</option>
-        </select>
+    <!-- Mode tabs: New Booking / Reschedule -->
+    <div class="tab-bar">
+      <button id="tabBtnNew" class="tab-btn active">New Booking</button>
+      <button id="tabBtnReschedule" class="tab-btn">Reschedule</button>
+    </div>
+
+    <!-- Tab 1: New Booking -->
+    <div id="tabNew">
+      <div class="section-group">
+        <div class="section-header">Appointment</div>
+        <div class="section">
+          <label>Primary Facility</label>
+          <select id="facility">
+            <option value="">-- Select --</option>
+            <option value="89">Calgary</option>
+            <option value="90">Halifax</option>
+            <option value="91">Montreal</option>
+            <option value="92">Ottawa</option>
+            <option value="93">Quebec City</option>
+            <option value="94">Toronto</option>
+            <option value="95">Vancouver</option>
+          </select>
+        </div>
+        <div class="row">
+          <div class="section half">
+            <label>Date From</label>
+            <input type="date" id="dateFrom">
+          </div>
+          <div class="section half">
+            <label>Date To</label>
+            <input type="date" id="dateTo">
+          </div>
+        </div>
+        <div class="row">
+          <div class="section half">
+            <label>Check every (sec) <span class="unit-hint" id="intervalMinHint"></span></label>
+            <input type="number" id="intervalMin" value="60" min="0" step="any">
+          </div>
+          <div class="section half">
+            <label>to max (sec) <span class="unit-hint" id="intervalMaxHint"></span></label>
+            <input type="number" id="intervalMax" value="120" min="0" step="any">
+          </div>
+        </div>
+        <div class="section checkbox-row">
+          <input type="checkbox" id="autoBook">
+          <label for="autoBook">Auto-book when slot found</label>
+        </div>
       </div>
-      <div class="row">
-        <div class="section half">
-          <label>Date From</label>
-          <input type="date" id="dateFrom">
+    </div>
+
+    <!-- Tab 2: Reschedule an existing booking to an EARLIER date -->
+    <div id="tabReschedule" style="display:none">
+      <div class="section-group">
+        <div class="section-header">Reschedule Earlier</div>
+        <div class="section">
+          <label>Facility</label>
+          <select id="rsFacility">
+            <option value="">-- Select --</option>
+            <option value="89">Calgary</option>
+            <option value="90">Halifax</option>
+            <option value="91">Montreal</option>
+            <option value="92">Ottawa</option>
+            <option value="93">Quebec City</option>
+            <option value="94">Toronto</option>
+            <option value="95">Vancouver</option>
+          </select>
         </div>
-        <div class="section half">
-          <label>Date To</label>
-          <input type="date" id="dateTo">
+        <div class="section">
+          <label>Currently Booked Date</label>
+          <input type="date" id="rsBookedDate">
         </div>
-      </div>
-      <div class="row">
-        <div class="section half">
-          <label>Check every (sec) <span class="unit-hint" id="intervalMinHint"></span></label>
-          <input type="number" id="intervalMin" value="60" min="0" step="any">
+        <div class="section">
+          <label>Earliest Acceptable Date</label>
+          <input type="date" id="rsFromDate">
         </div>
-        <div class="section half">
-          <label>to max (sec) <span class="unit-hint" id="intervalMaxHint"></span></label>
-          <input type="number" id="intervalMax" value="120" min="0" step="any">
+        <div class="row">
+          <div class="section half">
+            <label>Check every (sec) <span class="unit-hint" id="rsIntervalMinHint"></span></label>
+            <input type="number" id="rsIntervalMin" value="60" min="0" step="any">
+          </div>
+          <div class="section half">
+            <label>to max (sec) <span class="unit-hint" id="rsIntervalMaxHint"></span></label>
+            <input type="number" id="rsIntervalMax" value="120" min="0" step="any">
+          </div>
         </div>
-      </div>
-      <div class="section checkbox-row">
-        <input type="checkbox" id="autoBook">
-        <label for="autoBook">Auto-book when slot found</label>
+        <div class="section checkbox-row">
+          <input type="checkbox" id="rsAutoBook" checked>
+          <label for="rsAutoBook">Auto-reschedule when earlier date found</label>
+        </div>
+        <div class="tab-hint">
+          Only dates <b>before</b> your booked date are considered. On success your
+          existing appointment is moved to the earlier date.
+        </div>
       </div>
     </div>
 

@@ -139,6 +139,48 @@ h1 {
 
 .celebration-close:hover { color: #f38ba8; }
 
+/* Mode tabs (New Booking / Reschedule) */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  background: #181825;
+  border: 1px solid #313244;
+  border-radius: 8px;
+  padding: 4px;
+  margin-bottom: 6px;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 7px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #a6adc8;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tab-btn:hover { color: #cdd6f4; }
+
+.tab-btn.active {
+  background: #313244;
+  color: #89b4fa;
+}
+
+.tab-hint {
+  font-size: 10px;
+  color: #6c7086;
+  line-height: 1.4;
+  margin-top: 6px;
+}
+
+.tab-hint b { color: #a6adc8; }
+
 /* Section groups */
 .section-group {
   background: #181825;

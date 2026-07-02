@@ -13,7 +13,26 @@ var FACILITY_NAMES = {
 function $(id) { return document.getElementById(id); }
 function $$(sel) { return document.querySelectorAll(sel); }
 
+// Which mode tab is showing: 'new' (fresh booking) or 'reschedule'
+// (move an existing booking to an earlier date).
+var activeTab = 'new';
+
+// Local YYYY-MM-DD (toISOString shifts the date on non-UTC timezones).
+function localISODate(d) {
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+// The day before a YYYY-MM-DD date, done in local components so month/year
+// rollover is handled without any UTC conversion.
+function dayBefore(iso) {
+  var p = iso.split('-').map(Number);
+  return localISODate(new Date(p[0], p[1] - 1, p[2] - 1));
+}
+
 function init() {
+  wireTabs();
   wireAdvancedToggle();
   wireConditionalFields();
   wirePasswordToggle();
@@ -28,6 +47,33 @@ function init() {
   setDateDefaults();
   loadSavedData();
   startAutoRefresh();
+}
+
+// ===== Mode tabs =====
+function wireTabs() {
+  var btnNew = $('tabBtnNew');
+  var btnRs = $('tabBtnReschedule');
+  if (btnNew) btnNew.addEventListener('click', function() { setActiveTab('new'); });
+  if (btnRs) btnRs.addEventListener('click', function() { setActiveTab('reschedule'); });
+}
+
+function setActiveTab(tab, skipSave) {
+  var isRs = tab === 'reschedule';
+  activeTab = isRs ? 'reschedule' : 'new';
+
+  var btnNew = $('tabBtnNew');
+  var btnRs = $('tabBtnReschedule');
+  var panelNew = $('tabNew');
+  var panelRs = $('tabReschedule');
+  if (btnNew) btnNew.classList.toggle('active', !isRs);
+  if (btnRs) btnRs.classList.toggle('active', isRs);
+  if (panelNew) panelNew.style.display = isRs ? 'none' : 'block';
+  if (panelRs) panelRs.style.display = isRs ? 'block' : 'none';
+
+  var startBtn = $('startBtn');
+  if (startBtn) startBtn.textContent = isRs ? 'START RESCHEDULE' : 'START';
+
+  if (!skipSave) chrome.storage.local.set({ activeTab: activeTab });
 }
 
 // ===== Booking celebration banner =====
@@ -58,7 +104,13 @@ function showBookingCelebration(b) {
   var el = $('bookingCelebration');
   var details = $('bookingCelebration') && document.querySelector('#bookingCelebration .bc-details');
   if (!el || !details) return;
-  details.textContent = (b.date || '') + ' ' + (b.time || '') + ' — ' + (b.facility || '');
+  var title = document.querySelector('#bookingCelebration .celebration-title');
+  if (title) {
+    title.textContent = b.rescheduled ? 'Rescheduled to an Earlier Date!' : 'Congratulations! Slot Booked';
+  }
+  var text = (b.date || '') + ' ' + (b.time || '') + ' — ' + (b.facility || '');
+  if (b.rescheduled && b.prevDate) text += ' (was ' + b.prevDate + ')';
+  details.textContent = text;
   el.style.display = 'flex';
 }
 
@@ -72,7 +124,8 @@ function maybeShowBookingCelebration(lastBooking) {
 // Live "= X min" hint next to the seconds inputs, updates as you type.
 function wireIntervalHints() {
   function update() {
-    [['intervalMin', 'intervalMinHint'], ['intervalMax', 'intervalMaxHint']].forEach(function(p) {
+    [['intervalMin', 'intervalMinHint'], ['intervalMax', 'intervalMaxHint'],
+     ['rsIntervalMin', 'rsIntervalMinHint'], ['rsIntervalMax', 'rsIntervalMaxHint']].forEach(function(p) {
       var inp = document.getElementById(p[0]);
       var hint = document.getElementById(p[1]);
       if (!inp || !hint) return;
@@ -80,7 +133,7 @@ function wireIntervalHints() {
       hint.textContent = (sec > 0) ? '= ' + (Math.round(sec / 60 * 100) / 100) + ' min' : '';
     });
   }
-  ['intervalMin', 'intervalMax'].forEach(function(id) {
+  ['intervalMin', 'intervalMax', 'rsIntervalMin', 'rsIntervalMax'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.addEventListener('input', update);
   });
@@ -253,57 +306,135 @@ function wireStartButton() {
   if (!btn) return;
 
   btn.addEventListener('click', function() {
-    var email = (($('email') || {}).value || '').trim();
-    var password = (($('password') || {}).value || '').trim();
-    var facility = ($('facility') || {}).value || '';
-    var dateFrom = ($('dateFrom') || {}).value || '';
-    var dateTo = ($('dateTo') || {}).value || '';
-    var minInt = parseFloat(($('intervalMin') || {}).value) || 60;
-    var maxInt = parseFloat(($('intervalMax') || {}).value) || 120;
-    var autoBook = ($('autoBook') || {}).checked || false;
+    if (activeTab === 'reschedule') startReschedule();
+    else startNewBooking();
+  });
+}
 
-    if (!email || !password) { alert('Please enter email and password'); return; }
-    if (!facility) { alert('Please select a facility'); return; }
-    if (!dateFrom || !dateTo) { alert('Please set the date range'); return; }
-    if (dateFrom > dateTo) { alert('From date must be before To date'); return; }
-    // No lower limit — fractional minutes allowed.
+// Shared pre-start step: validate credentials, clear leftover celebration,
+// save credentials. Returns null if validation failed.
+function prepareStart() {
+  var email = (($('email') || {}).value || '').trim();
+  var password = (($('password') || {}).value || '').trim();
+  if (!email || !password) { alert('Please enter email and password'); return null; }
 
-    // Starting a fresh search — hide any leftover celebration from a prior run.
-    var celebration = $('bookingCelebration');
-    if (celebration) celebration.style.display = 'none';
-    chrome.storage.local.remove('lastBooking');
+  // Starting a fresh search — hide any leftover celebration from a prior run.
+  var celebration = $('bookingCelebration');
+  if (celebration) celebration.style.display = 'none';
+  chrome.storage.local.remove('lastBooking');
 
-    chrome.storage.local.set({
-      credentials: { email: email, password: password }
+  chrome.storage.local.set({
+    credentials: { email: email, password: password }
+  });
+  return { email: email, password: password };
+}
+
+// Merge the primary facility with the Advanced multi-facility selection.
+function buildFacilityList(oldConfig, primaryId) {
+  var advFacilities = oldConfig.facilities || [];
+  var primary = { id: primaryId, name: FACILITY_NAMES[primaryId] || primaryId };
+  var facilities = [primary];
+  for (var i = 0; i < advFacilities.length; i++) {
+    if (advFacilities[i].id !== primary.id) {
+      facilities.push(advFacilities[i]);
+    }
+  }
+  return facilities;
+}
+
+function startNewBooking() {
+  var facility = ($('facility') || {}).value || '';
+  var dateFrom = ($('dateFrom') || {}).value || '';
+  var dateTo = ($('dateTo') || {}).value || '';
+  var minInt = parseFloat(($('intervalMin') || {}).value) || 60;
+  var maxInt = parseFloat(($('intervalMax') || {}).value) || 120;
+  var autoBook = ($('autoBook') || {}).checked || false;
+
+  if (!facility) { alert('Please select a facility'); return; }
+  if (!dateFrom || !dateTo) { alert('Please set the date range'); return; }
+  if (dateFrom > dateTo) { alert('From date must be before To date'); return; }
+  // No lower limit — fractional minutes allowed.
+
+  if (!prepareStart()) return;
+
+  chrome.storage.local.get(['config'], function(stored) {
+    var oldConfig = stored.config || {};
+    var facilities = buildFacilityList(oldConfig, facility);
+
+    var config = {
+      mode: 'new',
+      facilities: facilities,
+      facilityId: facilities[0].id,
+      facilityName: facilities.map(function(f) { return f.name; }).join(', '),
+      scheduleId: oldConfig.scheduleId || null,
+      dateFrom: dateFrom,
+      dateTo: dateTo,
+      intervalMin: minInt,
+      intervalMax: Math.max(maxInt, minInt),
+      autoBook: autoBook
+    };
+
+    chrome.runtime.sendMessage({ type: 'START_MONITORING', config: config }, function() {
+      updateStatus(true, config);
     });
+  });
+}
 
-    chrome.storage.local.get(['config'], function(stored) {
-      var oldConfig = stored.config || {};
-      var advFacilities = oldConfig.facilities || [];
+// Reschedule mode: hunt for dates strictly BEFORE the currently booked date and
+// (optionally) auto-book — the site's appointment form moves the existing
+// booking, so "booking" an earlier date IS the reschedule.
+function startReschedule() {
+  var facility = ($('rsFacility') || {}).value || '';
+  var bookedDate = ($('rsBookedDate') || {}).value || '';
+  var fromDate = ($('rsFromDate') || {}).value || '';
+  var minInt = parseFloat(($('rsIntervalMin') || {}).value) || 60;
+  var maxInt = parseFloat(($('rsIntervalMax') || {}).value) || 120;
+  var autoBook = ($('rsAutoBook') || {}).checked || false;
 
-      var primary = { id: facility, name: FACILITY_NAMES[facility] || facility };
-      var facilities = [primary];
-      for (var i = 0; i < advFacilities.length; i++) {
-        if (advFacilities[i].id !== primary.id) {
-          facilities.push(advFacilities[i]);
-        }
-      }
+  var today = localISODate(new Date());
+  if (!facility) { alert('Please select a facility'); return; }
+  if (!bookedDate) { alert('Please enter your currently booked date'); return; }
+  if (bookedDate <= today) { alert('Booked date must be in the future'); return; }
+  if (!fromDate) fromDate = today;
 
-      var config = {
-        facilities: facilities,
-        facilityId: primary.id,
-        facilityName: facilities.map(function(f) { return f.name; }).join(', '),
-        scheduleId: oldConfig.scheduleId || null,
-        dateFrom: dateFrom,
-        dateTo: dateTo,
-        intervalMin: minInt,
-        intervalMax: Math.max(maxInt, minInt),
-        autoBook: autoBook
-      };
+  // Search window: [earliest acceptable] → [day before the booking].
+  var dateTo = dayBefore(bookedDate);
+  if (fromDate > dateTo) { alert('Earliest acceptable date must be before your booked date'); return; }
 
-      chrome.runtime.sendMessage({ type: 'START_MONITORING', config: config }, function() {
-        updateStatus(true);
-      });
+  if (!prepareStart()) return;
+
+  // Remember the reschedule form so it survives sidebar reloads.
+  chrome.storage.local.set({
+    reschedule: {
+      facilityId: facility,
+      bookedDate: bookedDate,
+      fromDate: fromDate,
+      intervalMin: minInt,
+      intervalMax: maxInt,
+      autoBook: autoBook
+    }
+  });
+
+  chrome.storage.local.get(['config'], function(stored) {
+    var oldConfig = stored.config || {};
+    var facilities = buildFacilityList(oldConfig, facility);
+
+    var config = {
+      mode: 'reschedule',
+      bookedDate: bookedDate,
+      facilities: facilities,
+      facilityId: facilities[0].id,
+      facilityName: facilities.map(function(f) { return f.name; }).join(', '),
+      scheduleId: oldConfig.scheduleId || null,
+      dateFrom: fromDate,
+      dateTo: dateTo,
+      intervalMin: minInt,
+      intervalMax: Math.max(maxInt, minInt),
+      autoBook: autoBook
+    };
+
+    chrome.runtime.sendMessage({ type: 'START_MONITORING', config: config }, function() {
+      updateStatus(true, config);
     });
   });
 }
@@ -330,12 +461,14 @@ function setDateDefaults() {
     future.setDate(future.getDate() + 90);
     dt.value = future.toISOString().split('T')[0];
   }
+  var rf = $('rsFromDate');
+  if (rf && !rf.value) rf.value = localISODate(new Date());
 }
 
 // ===== Load saved data =====
 function loadSavedData() {
   chrome.storage.local.get(
-    ['monitoring', 'config', 'stats', 'log', 'credentials', 'schedule', 'telegram', 'notifications', 'lastBooking'],
+    ['monitoring', 'config', 'stats', 'log', 'credentials', 'schedule', 'telegram', 'notifications', 'lastBooking', 'reschedule', 'activeTab'],
     function(data) {
       if (data.credentials) {
         if ($('email')) $('email').value = data.credentials.email || '';
@@ -379,6 +512,17 @@ function loadSavedData() {
         if ($('desktopNotif')) $('desktopNotif').checked = data.notifications.desktop !== false;
       }
 
+      if (data.reschedule) {
+        if ($('rsFacility')) $('rsFacility').value = data.reschedule.facilityId || '';
+        if ($('rsBookedDate') && data.reschedule.bookedDate) $('rsBookedDate').value = data.reschedule.bookedDate;
+        if ($('rsFromDate') && data.reschedule.fromDate) $('rsFromDate').value = data.reschedule.fromDate;
+        if ($('rsIntervalMin')) $('rsIntervalMin').value = data.reschedule.intervalMin || 60;
+        if ($('rsIntervalMax')) $('rsIntervalMax').value = data.reschedule.intervalMax || 120;
+        if ($('rsAutoBook')) $('rsAutoBook').checked = data.reschedule.autoBook !== false;
+      }
+
+      setActiveTab(data.activeTab === 'reschedule' ? 'reschedule' : 'new', true);
+
       // Sync conditional field visibility
       var sw = $('scheduleWindows');
       var se = $('scheduleEnabled');
@@ -388,7 +532,7 @@ function loadSavedData() {
       var te = $('telegramEnabled');
       if (tf && te) tf.style.display = te.checked ? 'block' : 'none';
 
-      updateStatus(data.monitoring);
+      updateStatus(data.monitoring, data.config);
       updateStats(data.stats);
       updateLog(data.log);
       maybeShowBookingCelebration(data.lastBooking);
@@ -397,15 +541,16 @@ function loadSavedData() {
 }
 
 // ===== UI updates =====
-function updateStatus(monitoring) {
+function updateStatus(monitoring, config) {
   var bar = $('status-bar');
   var txt = $('status-text');
   var startBtn = $('startBtn');
   var stopBtn = $('stopBtn');
 
   if (monitoring) {
+    var isRs = config && config.mode === 'reschedule';
     if (bar) bar.className = 'status active';
-    if (txt) txt.textContent = 'Monitoring...';
+    if (txt) txt.textContent = isRs ? 'Monitoring (Reschedule)...' : 'Monitoring...';
     if (startBtn) startBtn.disabled = true;
     if (stopBtn) stopBtn.disabled = false;
   } else {
@@ -478,8 +623,8 @@ function wireJumpToBottom() {
 // ===== Auto refresh =====
 function startAutoRefresh() {
   setInterval(function() {
-    chrome.storage.local.get(['monitoring', 'stats', 'log', 'lastBooking'], function(data) {
-      updateStatus(data.monitoring);
+    chrome.storage.local.get(['monitoring', 'stats', 'log', 'lastBooking', 'config'], function(data) {
+      updateStatus(data.monitoring, data.config);
       updateStats(data.stats);
       updateLog(data.log);
       maybeShowBookingCelebration(data.lastBooking);

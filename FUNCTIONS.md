@@ -64,7 +64,7 @@ one-line description of what each does.
 ### Slot checking & booking
 | Function | What it does |
 |----------|--------------|
-| `checkSlots` | Fetches available days per facility, filters by date range, **verifies real bookable times**, alerts/books. |
+| `checkSlots` | Fetches available days per facility, filters by date range (reschedule mode: only dates **before** the current booking), **verifies real bookable times**, alerts/books. |
 | `getTimesForDate` | Fetches the actual bookable times for a date (confirms a slot is real, not a phantom). |
 | `startBooking` | Begins booking a found slot (fetch times → save booking state → navigate to the booking form). |
 | `handleBookingContinuation` | Resumes an in-progress booking across page navigations, based on saved `bookingState.step`. |
@@ -144,20 +144,26 @@ one-line description of what each does.
 |----------|--------------|
 | `init` | Boots the sidebar: wires all controls, loads data, starts auto-refresh. |
 | `$` / `$$` | Shorthand for `document.getElementById` / `document.querySelectorAll`. |
+| `localISODate` / `dayBefore` | Local-timezone date helpers (YYYY-MM-DD, day-before math). |
+| `wireTabs` / `setActiveTab` | Switch between the **New Booking** and **Reschedule** mode tabs (persisted). |
+| `prepareStart` | Shared pre-start step: credential check, clear stale celebration, save credentials. |
+| `buildFacilityList` | Merges the chosen facility with the Advanced multi-facility selection. |
+| `startNewBooking` | Validates the New Booking form and starts normal monitoring. |
+| `startReschedule` | Validates the Reschedule form and starts monitoring for dates **before** the booked date. |
 | `wireBookingCelebration` | Wires the celebration banner's close button and listens for a live `BOOKING_CONFIRMED` push. |
-| `showBookingCelebration` | Fills in and shows the "Congratulations! Slot Booked" banner. |
+| `showBookingCelebration` | Fills in and shows the booking / reschedule celebration banner. |
 | `maybeShowBookingCelebration` | Shows the celebration banner on load only if the last booking was recent (avoids surfacing a stale one). |
-| `wireIntervalHints` | Live "= X min" hint next to the interval (seconds) inputs. |
+| `wireIntervalHints` | Live "= X min" hint next to the interval (seconds) inputs (both tabs). |
 | `wireAdvancedToggle` | Expands/collapses the Advanced Settings section. |
 | `wireConditionalFields` | Shows/hides dependent fields (schedule windows, Telegram fields). |
 | `wirePasswordToggle` | Show/hide password. |
 | `wireTestTelegram` | Sends a Telegram test message. |
 | `wireSaveAdvanced` | Saves advanced settings (schedule, telegram, notifications, facilities). |
 | `wireCopyLog` | Copies the activity log to the clipboard. |
-| `wireStartButton` / `wireStopButton` | Hook up Start / Stop, validating inputs first. |
-| `setDateDefaults` | Pre-fills the date range fields (today → +90 days) if empty. |
-| `loadSavedData` | Loads saved credentials/config/settings into the form on open. |
-| `updateStatus` | Updates the status badge (Idle / Monitoring). |
+| `wireStartButton` / `wireStopButton` | Hook up Start / Stop; Start routes to the active tab's flow (new booking vs reschedule). |
+| `setDateDefaults` | Pre-fills the date range fields (today → +90 days) and the reschedule "earliest" date if empty. |
+| `loadSavedData` | Loads saved credentials/config/settings (incl. reschedule form + active tab) into the form on open. |
+| `updateStatus` | Updates the status badge (Idle / Monitoring / Monitoring (Reschedule)). |
 | `updateStats` | Refreshes the checks / found / last-check counters. |
 | `updateLog` | Renders the activity log; preserves scroll position and shows a "jump to latest" button if scrolled up. |
 | `wireJumpToBottom` | Wires the "↓ New logs" button to jump to the latest log entry. |

@@ -71,6 +71,21 @@ its own profile). Chromium/Brave/ungoogled-chromium do this the most cleanly.
 4. Press **START**. Press **STOP** to halt immediately (it also aborts an
    in-progress login/booking).
 
+### Reschedule an existing booking to an earlier date
+
+Already have an appointment? Open the **Reschedule** tab:
+
+1. Pick the **Facility** and enter your **Currently Booked Date**.
+2. *(Optional)* Set the **Earliest Acceptable Date** (defaults to today).
+3. Keep **Auto-reschedule** ticked to move the booking automatically the moment
+   an earlier date opens up (untick it to only get alerts).
+4. Press **START RESCHEDULE**.
+
+Only dates **strictly before** your booked date are ever considered — the
+extension can never move your appointment to a later date. On success your
+existing appointment is replaced by the earlier one (that's how the website's
+reschedule works) and monitoring stops.
+
 The extension logs in on its own, then keeps checking. If the session expires it
 detects the login screen and logs back in automatically. If your credentials are
 wrong or a CAPTCHA appears, it stops and tells you (no pointless retries).

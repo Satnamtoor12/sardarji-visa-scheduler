@@ -247,7 +247,12 @@ function startMonitoring(config) {
       loginClearInProgress: false,
       loginInProgress: false
     });
-    addLog('Starting... ' + config.facilityName + ' (' + config.dateFrom + ' → ' + config.dateTo + ')');
+    if (config.mode === 'reschedule') {
+      addLog('Reschedule mode: ' + config.facilityName + ' — hunting dates BEFORE ' + config.bookedDate +
+             ' (' + config.dateFrom + ' → ' + config.dateTo + ')');
+    } else {
+      addLog('Starting... ' + config.facilityName + ' (' + config.dateFrom + ' → ' + config.dateTo + ')');
+    }
 
     if (prev.loginPagePrepared && prev.freshLoginTabId && prev.credentials) {
       // A freshly-cleared login page is already open (from the icon click).
@@ -822,7 +827,9 @@ const SLOT_ALERT_COOLDOWN_MS = 60 * 60 * 1000;
 
 function handleSlotFound(data) {
   const key = data.date + '|' + data.facility;
-  chrome.storage.local.get(['alertedSlots'], (store) => {
+  chrome.storage.local.get(['alertedSlots', 'config'], (store) => {
+    const cfg = store.config || {};
+    const isReschedule = cfg.mode === 'reschedule';
     const now = Date.now();
     const alerted = store.alertedSlots || {};
     // Prune stale entries so the map can't grow forever.
@@ -842,49 +849,65 @@ function handleSlotFound(data) {
     notifyDesktop('slot-' + Date.now(), {
       type: 'basic',
       iconUrl: 'icons/icon128.png',
-      title: 'VISA SLOT AVAILABLE!',
-      message: 'Date: ' + data.date + '\nFacility: ' + data.facility,
+      title: isReschedule ? 'EARLIER SLOT AVAILABLE!' : 'VISA SLOT AVAILABLE!',
+      message: 'Date: ' + data.date + '\nFacility: ' + data.facility +
+               (isReschedule ? '\nYour booking: ' + cfg.bookedDate : ''),
       priority: 2,
       requireInteraction: true
     });
-    addLog('SLOT: ' + data.date + ' @ ' + data.facility);
-    sendTelegram('🟢 <b>SLOT AVAILABLE!</b>\n📅 Date: ' + data.date + '\n🏢 Facility: ' + data.facility + '\n📋 All dates: ' + (data.allDates || []).slice(0, 5).join(', '));
+    addLog((isReschedule ? 'EARLIER SLOT: ' : 'SLOT: ') + data.date + ' @ ' + data.facility);
+    sendTelegram(
+      (isReschedule
+        ? '🟢 <b>EARLIER SLOT AVAILABLE!</b>\n📅 New date: ' + data.date + '\n📌 Current booking: ' + cfg.bookedDate
+        : '🟢 <b>SLOT AVAILABLE!</b>\n📅 Date: ' + data.date) +
+      '\n🏢 Facility: ' + data.facility +
+      '\n📋 All dates: ' + (data.allDates || []).slice(0, 5).join(', ')
+    );
     playSound();
   });
 }
 
 function handleBookingResult(data) {
   if (data.success) {
-    notifyDesktop('booked-' + Date.now(), {
-      type: 'basic',
-      iconUrl: 'icons/icon128.png',
-      title: 'BOOKED!',
-      message: data.date + ' ' + data.time + ' - ' + data.facility,
-      priority: 2,
-      requireInteraction: true
-    });
-    addLog('BOOKED: ' + data.date + ' ' + data.time + ' @ ' + data.facility);
-
     chrome.storage.local.get(['config', 'credentials'], (d) => {
       const cfg = d.config || {};
+      const isReschedule = cfg.mode === 'reschedule';
       const email = (d.credentials && d.credentials.email) || '';
+
+      notifyDesktop('booked-' + Date.now(), {
+        type: 'basic',
+        iconUrl: 'icons/icon128.png',
+        title: isReschedule ? 'RESCHEDULED!' : 'BOOKED!',
+        message: data.date + ' ' + data.time + ' - ' + data.facility +
+                 (isReschedule && cfg.bookedDate ? ' (was ' + cfg.bookedDate + ')' : ''),
+        priority: 2,
+        requireInteraction: true
+      });
+      addLog((isReschedule ? 'RESCHEDULED: ' : 'BOOKED: ') + data.date + ' ' + data.time + ' @ ' + data.facility +
+             (isReschedule && cfg.bookedDate ? ' (was ' + cfg.bookedDate + ')' : ''));
+
       sendTelegram(
-        '🎉 <b>APPOINTMENT BOOKED!</b>\n' +
+        (isReschedule ? '🎉 <b>APPOINTMENT RESCHEDULED!</b>\n' : '🎉 <b>APPOINTMENT BOOKED!</b>\n') +
         '📅 Date: ' + data.date + '\n' +
         '⏰ Time: ' + data.time + '\n' +
         '🏢 Facility: ' + data.facility +
+        (isReschedule && cfg.bookedDate ? '\n↩️ Previous date: ' + cfg.bookedDate : '') +
         (email ? '\n👤 Account: ' + email : '') +
         (cfg.scheduleId ? '\n🔖 Schedule ID: ' + cfg.scheduleId : '') +
         '\n✅ Monitoring stopped.'
       );
+
+      const lastBooking = {
+        date: data.date, time: data.time, facility: data.facility, ts: Date.now(),
+        rescheduled: isReschedule,
+        prevDate: isReschedule ? (cfg.bookedDate || null) : null
+      };
+      chrome.storage.local.set({ lastBooking });
+      chrome.runtime.sendMessage({ type: 'BOOKING_CONFIRMED', data: lastBooking }, () => void chrome.runtime.lastError);
+
+      stopMonitoring();
+      playSound();
     });
-
-    const lastBooking = { date: data.date, time: data.time, facility: data.facility, ts: Date.now() };
-    chrome.storage.local.set({ lastBooking });
-    chrome.runtime.sendMessage({ type: 'BOOKING_CONFIRMED', data: lastBooking }, () => void chrome.runtime.lastError);
-
-    stopMonitoring();
-    playSound();
   } else {
     // Booking didn't go through (slot taken, etc.) — keep monitoring for the
     // next opening instead of stalling.
