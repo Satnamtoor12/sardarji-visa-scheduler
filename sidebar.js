@@ -311,13 +311,11 @@ function wireExportImport() {
             reschedule: data.reschedule || null,
             activeTab: data.activeTab || 'new'
           };
-          var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-          var url = URL.createObjectURL(blob);
+          var json = JSON.stringify(payload, null, 2);
           var a = document.createElement('a');
-          a.href = url;
+          a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
           a.download = 'sardarji-settings-' + localISODate(new Date()) + '.json';
           a.click();
-          URL.revokeObjectURL(url);
           exportBtn.textContent = '✓ Exported';
           setTimeout(function() { exportBtn.textContent = 'Export Settings'; }, 2000);
         }
