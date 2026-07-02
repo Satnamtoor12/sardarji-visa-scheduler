@@ -281,12 +281,12 @@ function startMonitoring(config) {
         } else {
           // Prepared tab gone/changed — fall back to the normal flow.
           chrome.storage.local.set({ sessionCleared: false, freshLoginTabId: null, loginPagePrepared: false });
-          beginMonitoringLoop();
+          openFreshLoginSession('Starting');
         }
       });
     } else {
       chrome.storage.local.set({ sessionCleared: false, freshLoginTabId: null, loginPagePrepared: false });
-      beginMonitoringLoop();
+      openFreshLoginSession('Starting');
     }
   });
 }
@@ -297,11 +297,66 @@ function startMonitoring(config) {
 //   3) load the login page in that same tab
 // When the login page loads, handlePageReady sees the cleaned fresh tab and
 // auto-submits. No double-clearing, no tab flashing.
+// Clear cookies → open login page → user logs in manually (no auto-fill).
+function openManualLoginPage(reason) {
+  chrome.storage.local.get(['loginClearInProgress'], (data) => {
+    if (data.loginClearInProgress) {
+      addLog('Login page already preparing...');
+      return;
+    }
+
+    addLog((reason || 'Manual login') + ' — clearing cookies before login...');
+    chrome.storage.local.set({
+      sessionCleared: false,
+      loginClearInProgress: true,
+      loginInProgress: false,
+      freshLoginTabId: null,
+      loginPagePrepared: false,
+      manualSessionMode: true
+    });
+
+    const runInTab = (tabId) => {
+      chrome.tabs.update(tabId, { url: 'about:blank', active: true }, () => {
+        addLog('Clearing visa cookies & data...');
+        clearVisaSiteData().then(() => {
+          chrome.storage.local.set({
+            sessionCleared: true,
+            loginClearInProgress: false,
+            freshLoginTabId: tabId
+          }, () => {
+            chrome.tabs.update(tabId, { url: LOGIN_URL, active: true }, () => {
+              addLog('Login page open — log in manually (solve CAPTCHA if shown).');
+            });
+          });
+        });
+      });
+    };
+
+    chrome.tabs.query({ url: 'https://ais.usvisa-info.com/*' }, (tabs) => {
+      if (tabs && tabs.length) {
+        const keep = tabs[0].id;
+        const extras = tabs.slice(1).map((t) => t.id);
+        if (extras.length) chrome.tabs.remove(extras);
+        runInTab(keep);
+      } else {
+        chrome.tabs.create({ url: 'about:blank', active: true }, (tab) => {
+          if (chrome.runtime.lastError || !tab || !tab.id) {
+            addLog('Tab create error.');
+            chrome.storage.local.set({ loginClearInProgress: false });
+            pauseForManualLogin('tab-create-failed');
+            return;
+          }
+          runInTab(tab.id);
+        });
+      }
+    });
+  });
+}
+
 function openFreshLoginSession(reason) {
   chrome.storage.local.get(['loginClearInProgress', 'loginInProgress', 'credentials', 'manualSessionMode'], (data) => {
     if (data.manualSessionMode) {
-      addLog('Manual login mode — cookies kept. Log in yourself, then press Resume.');
-      pauseForManualLogin('awaiting-manual-login');
+      addLog('Waiting for manual login — finish logging in on the visa tab.');
       return;
     }
     if (data.loginClearInProgress || data.loginInProgress) {
@@ -407,13 +462,30 @@ function actuallySendLogin(tabId, credentials, attempt) {
 }
 
 function handlePageReady(msg, sender) {
-  chrome.storage.local.get(['monitoring'], (data) => {
+  chrome.storage.local.get(['monitoring', 'manualSessionMode'], (data) => {
     if (!data.monitoring) return;
+
+    const loggedInPages = ['appointment', 'groups', 'continue-actions', 'logged-in'];
+
+    // Manual login (e.g. after CAPTCHA resume): cookies were cleared, user logged in.
+    if (data.manualSessionMode && loggedInPages.includes(msg.page)) {
+      chrome.storage.local.set({
+        manualSessionMode: false,
+        pausedState: null,
+        loginInProgress: false,
+        loginClearInProgress: false,
+        loginAttempts: 0,
+        loginPagePrepared: false
+      }, () => {
+        addLog('Manual login complete — starting monitoring.');
+        beginMonitoringLoop();
+      });
+      return;
+    }
 
     // Reaching any logged-in page means the login attempt concluded
     // successfully. The submitting content script was destroyed on navigation
     // and could not report it, so clear the flags here.
-    const loggedInPages = ['appointment', 'groups', 'continue-actions', 'logged-in'];
     if (loggedInPages.includes(msg.page)) {
       chrome.storage.local.set({ loginInProgress: false, loginClearInProgress: false, loginAttempts: 0, loginPagePrepared: false });
     }
@@ -422,7 +494,7 @@ function handlePageReady(msg, sender) {
       addLog('On login page.');
       chrome.storage.local.get(['credentials', 'sessionCleared', 'loginClearInProgress', 'loginInProgress', 'freshLoginTabId', 'manualSessionMode'], (d) => {
         if (d.manualSessionMode) {
-          addLog('Manual login mode — complete login yourself, then press Resume.');
+          addLog('Cookies cleared — log in manually on this page.');
           return;
         }
         // Back on the login page while an attempt was in progress = that attempt
@@ -561,8 +633,8 @@ function handleLoginFailed(reason) {
           pausedState: { reason: 'captcha', config: d.config || null, at: Date.now() },
           manualSessionMode: true
         }, () => {
-          addLog('CAPTCHA — log in manually (cookies kept). Press Resume when done.');
-          sendTelegram('🔴 <b>CAPTCHA blocked login</b>\n' + msg + '\nLog in manually, then press Resume in the sidebar.');
+          addLog('CAPTCHA — press Resume to clear cookies and log in manually.');
+          sendTelegram('🔴 <b>CAPTCHA blocked login</b>\n' + msg + '\nPress Resume in the sidebar — cookies will be cleared, then log in manually.');
           stopMonitoring();
         });
       });
@@ -628,49 +700,6 @@ function pauseForManualLogin(detail) {
   });
 }
 
-function resumeAfterManualLogin() {
-  chrome.tabs.query({ url: 'https://ais.usvisa-info.com/*' }, (tabs) => {
-    if (!tabs.length) {
-      addLog('No visa tab — open ais.usvisa-info.com, log in manually, then Resume.');
-      pauseForManualLogin('no-tab');
-      return;
-    }
-
-    const tab = tabs[0];
-    chrome.tabs.sendMessage(tab.id, { type: 'WHAT_PAGE' }, (resp) => {
-      if (chrome.runtime.lastError) {
-        addLog('Visa tab not ready — reload the page, log in, then Resume.');
-        pauseForManualLogin('tab-not-ready');
-        return;
-      }
-
-      if (resp && resp.page === 'login') {
-        addLog('Still on login page — finish manual login, then Resume again.');
-        pauseForManualLogin('still-on-login');
-        return;
-      }
-
-      const loggedIn = resp &&
-        ['logged-in', 'appointment', 'groups', 'continue-actions'].includes(resp.page);
-      if (loggedIn) {
-        chrome.storage.local.set({ manualSessionMode: false, pausedState: null }, () => {
-          addLog('Manual login OK — checking slots (cookies not cleared).');
-          chrome.tabs.sendMessage(tab.id, { type: 'DO_CHECK' }, (r) => {
-            if (chrome.runtime.lastError) {
-              addLog('Check failed: ' + chrome.runtime.lastError.message);
-              scheduleNext();
-            }
-          });
-        });
-        return;
-      }
-
-      addLog('Not logged in yet — open your appointment area, log in, then Resume.');
-      pauseForManualLogin('unknown-page');
-    });
-  });
-}
-
 function resumeMonitoring() {
   chrome.storage.local.get(['pausedState', 'credentials'], (d) => {
     const ps = d.pausedState;
@@ -686,15 +715,13 @@ function resumeMonitoring() {
       monitoring: true,
       config: ps.config,
       pausedState: null,
-      manualSessionMode: true,
       loginInProgress: false,
       loginClearInProgress: false,
       loginAttempts: 0,
       loginPagePrepared: false,
       sessionCleared: false
     }, () => {
-      addLog('Resume requested — will NOT clear cookies.');
-      resumeAfterManualLogin();
+      openManualLoginPage('CAPTCHA resume');
     });
   });
 }
@@ -845,7 +872,21 @@ function triggerCheck() {
     if (!data.monitoring) return;
 
     if (data.manualSessionMode) {
-      resumeAfterManualLogin();
+      chrome.tabs.query({ url: 'https://ais.usvisa-info.com/*' }, (tabs) => {
+        if (!tabs.length) {
+          openManualLoginPage('Manual login');
+          return;
+        }
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'WHAT_PAGE' }, (resp) => {
+          const loggedIn = resp &&
+            ['logged-in', 'appointment', 'groups', 'continue-actions'].includes(resp.page);
+          if (loggedIn) {
+            chrome.storage.local.set({ manualSessionMode: false, pausedState: null }, () => {
+              chrome.tabs.sendMessage(tabs[0].id, { type: 'DO_CHECK' }, () => void chrome.runtime.lastError);
+            });
+          }
+        });
+      });
       return;
     }
 
@@ -922,8 +963,7 @@ function handleCheckComplete(data) {
     // Session expired → auto re-login (skip cookie clear during manual-login resume)
     if (data.currentPage === 'login') {
       if (stored.manualSessionMode) {
-        addLog('Session not ready — log in manually, then Resume.');
-        pauseForManualLogin('check-saw-login');
+        openManualLoginPage('Session lost');
         return;
       }
       openFreshLoginSession('Session expired');
