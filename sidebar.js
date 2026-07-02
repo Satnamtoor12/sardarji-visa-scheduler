@@ -33,6 +33,7 @@ function dayBefore(iso) {
 
 function init() {
   wireTabs();
+  wireFetchBooked();
   wireAdvancedToggle();
   wireConditionalFields();
   wirePasswordToggle();
@@ -74,6 +75,44 @@ function setActiveTab(tab, skipSave) {
   if (startBtn) startBtn.textContent = isRs ? 'START RESCHEDULE' : 'START';
 
   if (!skipSave) chrome.storage.local.set({ activeTab: activeTab });
+}
+
+// ===== Auto-fetch the booked date from an open visa-site tab =====
+function wireFetchBooked() {
+  var btn = $('rsFetchBooked');
+  if (!btn) return;
+
+  function reset() {
+    setTimeout(function() { btn.textContent = '⟳ Auto-fetch'; }, 2500);
+  }
+
+  btn.addEventListener('click', function() {
+    btn.textContent = 'Fetching...';
+    chrome.tabs.query({ url: 'https://ais.usvisa-info.com/*' }, function(tabs) {
+      if (!tabs || !tabs.length) {
+        btn.textContent = '✗ Site not open';
+        reset();
+        return;
+      }
+      chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_BOOKED_DATE' }, function(resp) {
+        if (chrome.runtime.lastError || !resp) {
+          btn.textContent = '✗ Page not ready';
+        } else if (resp.date) {
+          if ($('rsBookedDate')) $('rsBookedDate').value = resp.date;
+          btn.textContent = '✓ Found';
+          // Persist into the saved reschedule form so it survives reloads.
+          chrome.storage.local.get(['reschedule'], function(d) {
+            var rs = d.reschedule || {};
+            rs.bookedDate = resp.date;
+            chrome.storage.local.set({ reschedule: rs });
+          });
+        } else {
+          btn.textContent = '✗ Not found';
+        }
+        reset();
+      });
+    });
+  });
 }
 
 // ===== Booking celebration banner =====
@@ -393,13 +432,17 @@ function startReschedule() {
 
   var today = localISODate(new Date());
   if (!facility) { alert('Please select a facility'); return; }
-  if (!bookedDate) { alert('Please enter your currently booked date'); return; }
-  if (bookedDate <= today) { alert('Booked date must be in the future'); return; }
   if (!fromDate) fromDate = today;
 
-  // Search window: [earliest acceptable] → [day before the booking].
-  var dateTo = dayBefore(bookedDate);
-  if (fromDate > dateTo) { alert('Earliest acceptable date must be before your booked date'); return; }
+  // Booked date is optional: leave it empty and the content script reads it
+  // off the site after login (Groups page shows the appointment).
+  var dateTo = null;
+  if (bookedDate) {
+    if (bookedDate <= today) { alert('Booked date must be in the future'); return; }
+    // Search window: [earliest acceptable] → [day before the booking].
+    dateTo = dayBefore(bookedDate);
+    if (fromDate > dateTo) { alert('Earliest acceptable date must be before your booked date'); return; }
+  }
 
   if (!prepareStart()) return;
 
@@ -421,7 +464,7 @@ function startReschedule() {
 
     var config = {
       mode: 'reschedule',
-      bookedDate: bookedDate,
+      bookedDate: bookedDate || null,
       facilities: facilities,
       facilityId: facilities[0].id,
       facilityName: facilities.map(function(f) { return f.name; }).join(', '),
@@ -623,11 +666,17 @@ function wireJumpToBottom() {
 // ===== Auto refresh =====
 function startAutoRefresh() {
   setInterval(function() {
-    chrome.storage.local.get(['monitoring', 'stats', 'log', 'lastBooking', 'config'], function(data) {
+    chrome.storage.local.get(['monitoring', 'stats', 'log', 'lastBooking', 'config', 'reschedule'], function(data) {
       updateStatus(data.monitoring, data.config);
       updateStats(data.stats);
       updateLog(data.log);
       maybeShowBookingCelebration(data.lastBooking);
+
+      // If the booked date was auto-detected mid-run, surface it in the form.
+      var rb = $('rsBookedDate');
+      if (rb && !rb.value && data.reschedule && data.reschedule.bookedDate) {
+        rb.value = data.reschedule.bookedDate;
+      }
     });
   }, 3000);
 }

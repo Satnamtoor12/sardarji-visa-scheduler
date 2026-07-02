@@ -79,6 +79,14 @@ one-line description of what each does.
 | `clickScheduleAppointment` | Clicks "Schedule Appointment" on the continue-actions page. |
 | `clickContinueOnGroupsPage` | Clicks "Continue" on the Groups page. |
 
+### Booked-date detection (reschedule auto-fetch)
+| Function | What it does |
+|----------|--------------|
+| `extractBookedDate` | Reads the currently booked appointment date off the page (Groups page `.consular-appt`, then any "appointment" text line); only future dates accepted. |
+| `parseApptDate` | Parses "26 October, 2027" / "October 26, 2027" / "2027-10-26" style text into YYYY-MM-DD. |
+| `monthFromName` / `fmtDate` / `dayBeforeISO` | Month-name lookup and local date formatting/day-before helpers. |
+| `saveDetectedBookedDate` | Saves an auto-detected booked date into config (sets `dateTo` = day before) and fills the sidebar form. |
+
 ### Calendar
 | Function | What it does |
 |----------|--------------|
@@ -149,7 +157,8 @@ one-line description of what each does.
 | `prepareStart` | Shared pre-start step: credential check, clear stale celebration, save credentials. |
 | `buildFacilityList` | Merges the chosen facility with the Advanced multi-facility selection. |
 | `startNewBooking` | Validates the New Booking form and starts normal monitoring. |
-| `startReschedule` | Validates the Reschedule form and starts monitoring for dates **before** the booked date. |
+| `startReschedule` | Validates the Reschedule form and starts monitoring for dates **before** the booked date (booked date optional — auto-detected after login if left empty). |
+| `wireFetchBooked` | "⟳ Auto-fetch" button: reads the booked date from an open visa-site tab via `GET_BOOKED_DATE`. |
 | `wireBookingCelebration` | Wires the celebration banner's close button and listens for a live `BOOKING_CONFIRMED` push. |
 | `showBookingCelebration` | Fills in and shows the booking / reschedule celebration banner. |
 | `maybeShowBookingCelebration` | Shows the celebration banner on load only if the last booking was recent (avoids surfacing a stale one). |

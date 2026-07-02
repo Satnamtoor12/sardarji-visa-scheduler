@@ -75,7 +75,10 @@ its own profile). Chromium/Brave/ungoogled-chromium do this the most cleanly.
 
 Already have an appointment? Open the **Reschedule** tab:
 
-1. Pick the **Facility** and enter your **Currently Booked Date**.
+1. Pick the **Facility**. The **Currently Booked Date** fills itself:
+   - press **⟳ Auto-fetch** to read it from an open (logged-in) visa-site tab, or
+   - simply **leave it empty** — it's auto-detected right after login, or
+   - type it manually.
 2. *(Optional)* Set the **Earliest Acceptable Date** (defaults to today).
 3. Keep **Auto-reschedule** ticked to move the booking automatically the moment
    an earlier date opens up (untick it to only get alerts).

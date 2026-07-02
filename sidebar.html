@@ -116,7 +116,10 @@
           </select>
         </div>
         <div class="section">
-          <label>Currently Booked Date</label>
+          <div class="log-header">
+            <label>Currently Booked Date</label>
+            <span id="rsFetchBooked" class="copy-btn" title="Read the booked date from an open visa-site tab">⟳ Auto-fetch</span>
+          </div>
           <input type="date" id="rsBookedDate">
         </div>
         <div class="section">
@@ -139,7 +142,8 @@
         </div>
         <div class="tab-hint">
           Only dates <b>before</b> your booked date are considered. On success your
-          existing appointment is moved to the earlier date.
+          existing appointment is moved to the earlier date. Leave the booked date
+          empty and it will be <b>auto-detected after login</b>.
         </div>
       </div>
     </div>

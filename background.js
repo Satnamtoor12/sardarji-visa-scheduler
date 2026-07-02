@@ -248,8 +248,10 @@ function startMonitoring(config) {
       loginInProgress: false
     });
     if (config.mode === 'reschedule') {
-      addLog('Reschedule mode: ' + config.facilityName + ' — hunting dates BEFORE ' + config.bookedDate +
-             ' (' + config.dateFrom + ' → ' + config.dateTo + ')');
+      addLog('Reschedule mode: ' + config.facilityName + ' — hunting dates BEFORE ' +
+             (config.bookedDate
+               ? config.bookedDate + ' (' + config.dateFrom + ' → ' + config.dateTo + ')'
+               : 'your booked date (auto-detect after login; from ' + config.dateFrom + ')'));
     } else {
       addLog('Starting... ' + config.facilityName + ' (' + config.dateFrom + ' → ' + config.dateTo + ')');
     }

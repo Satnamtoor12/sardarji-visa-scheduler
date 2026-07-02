@@ -26,6 +26,14 @@
       const url = window.location.href;
       log('Page loaded: ' + page + ' (' + url.split('/').slice(-2).join('/') + ')');
 
+      // Reschedule auto-detect: booked date still unknown → try reading it off
+      // this page (the Groups page shows it right after login).
+      if (data.config && data.config.mode === 'reschedule' && !data.config.bookedDate &&
+          page !== 'login' && page !== 'unknown') {
+        const found = extractBookedDate();
+        if (found) saveDetectedBookedDate(found);
+      }
+
       // On Groups page: click Continue to navigate to schedule page
       if (page === 'groups') {
         clickContinueOnGroupsPage().then(() => {
@@ -93,6 +101,9 @@
         });
         sendResponse({ ok: true });
         return true;
+      case 'GET_BOOKED_DATE':
+        sendResponse({ date: extractBookedDate() });
+        break;
       default:
         sendResponse({ ok: false });
     }
@@ -505,6 +516,22 @@
       });
     }
 
+    // Reschedule auto-detect: without the booked date there is no upper bound,
+    // so try reading it from the current page; if it still can't be found,
+    // skip this check (the next page navigation usually picks it up).
+    if (config.mode === 'reschedule' && !config.bookedDate) {
+      const found = extractBookedDate();
+      if (found) {
+        config.bookedDate = found;
+        config.dateTo = dayBeforeISO(found);
+        saveDetectedBookedDate(found);
+      } else {
+        log('Reschedule: booked date not detected yet — visit the Groups page once, or enter it manually.');
+        done(0);
+        return;
+      }
+    }
+
     // Build facility list (support both old single and new multi format)
     const facilities = config.facilities || [{ id: config.facilityId, name: config.facilityName }];
     let totalFound = 0;
@@ -890,6 +917,100 @@
         data: { success: true, date: state.date, time: state.time, facility: state.facilityName }
       });
     }
+  }
+
+  // ==================== BOOKED-DATE DETECTION ====================
+  // Reads the CURRENTLY BOOKED appointment date off the page, so reschedule
+  // mode can auto-fill it instead of the user typing it in.
+
+  const MONTH_NUM = {
+    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12
+  };
+
+  function monthFromName(name) {
+    const key = (name || '').toLowerCase();
+    if (MONTH_NUM[key]) return MONTH_NUM[key];
+    const abbr = key.slice(0, 3);
+    for (const m of Object.keys(MONTH_NUM)) {
+      if (m.slice(0, 3) === abbr) return MONTH_NUM[m];
+    }
+    return null;
+  }
+
+  function fmtDate(y, mo, d) {
+    return y + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+  }
+
+  function dayBeforeISO(iso) {
+    const p = iso.split('-').map(Number);
+    const dt = new Date(p[0], p[1] - 1, p[2] - 1);
+    return fmtDate(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
+  }
+
+  // Pull a "26 October, 2027" / "October 26, 2027" / "2027-10-26" style date
+  // out of a blob of text. Returns YYYY-MM-DD or null.
+  function parseApptDate(text) {
+    if (!text) return null;
+    let m = text.match(/(\d{1,2})\s+([A-Za-z]{3,9}),?\s+(\d{4})/);
+    if (m) {
+      const mo = monthFromName(m[2]);
+      if (mo) return fmtDate(+m[3], mo, +m[1]);
+    }
+    m = text.match(/([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/);
+    if (m) {
+      const mo = monthFromName(m[1]);
+      if (mo) return fmtDate(+m[3], mo, +m[2]);
+    }
+    m = text.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return m[0];
+    return null;
+  }
+
+  // Find the booked appointment date on the current page. Most reliable on the
+  // Groups page (".consular-appt": "Consular Appointment: 26 October, 2027,
+  // 08:30 Toronto local time"), with text fallbacks for other logged-in pages.
+  // Only FUTURE dates are accepted (a booked appointment is always ahead).
+  function extractBookedDate() {
+    const now = new Date();
+    const today = fmtDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
+    const candidates = [];
+
+    // 1. Known appointment elements (Groups page cards).
+    document.querySelectorAll('.consular-appt, .appointment-date, [class*="appt"]').forEach((el) => {
+      candidates.push(el.textContent || '');
+    });
+
+    // 2. Page-text lines, most specific phrase first.
+    const lines = ((document.body && document.body.innerText) || '').split('\n');
+    for (const line of lines) {
+      if (/consular appointment/i.test(line)) candidates.push(line);
+    }
+    for (const line of lines) {
+      if (/appointment|scheduled/i.test(line)) candidates.push(line);
+    }
+
+    for (const text of candidates) {
+      const d = parseApptDate(text);
+      if (d && d > today) return d;
+    }
+    return null;
+  }
+
+  // Persist an auto-detected booked date: it becomes the reschedule upper
+  // bound (dateTo = day before), and the sidebar form field gets filled too.
+  function saveDetectedBookedDate(found) {
+    chrome.storage.local.get(['config', 'reschedule'], (d) => {
+      const c = d.config || {};
+      if (c.bookedDate) return;   // already known — don't overwrite
+      c.bookedDate = found;
+      c.dateTo = dayBeforeISO(found);
+      const rs = d.reschedule || {};
+      rs.bookedDate = found;
+      chrome.storage.local.set({ config: c, reschedule: rs }, () => {
+        log('Detected booked appointment: ' + found + ' — hunting dates before it.');
+      });
+    });
   }
 
   // ==================== SCHEDULE NAVIGATION ====================
