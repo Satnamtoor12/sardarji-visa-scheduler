@@ -191,10 +191,30 @@
     return 'unknown';
   }
 
+  // The continue_actions page is where the site says definitively whether the
+  // account holds a booking: the action reads "Reschedule Appointment" when
+  // one exists and plain "Schedule Appointment" when it doesn't. (The plain
+  // label is a substring of the other, so only its absence is meaningful.)
+  function pageShowsNoExistingBooking() {
+    const txt = ((document.body && document.body.innerText) || '').toLowerCase();
+    return txt.includes('schedule appointment') && !txt.includes('reschedule appointment');
+  }
+
   // Click "Schedule Appointment" on continue_actions page
   async function clickScheduleAppointment() {
     log('On Continue Actions page — clicking Schedule Appointment...');
     await delay(1500 + Math.random() * 1500);
+
+    // Reschedule mode needs an existing booking to move. If this page offers
+    // plain "Schedule Appointment" (no booking on the account), report it so
+    // monitoring stops with an alert instead of waiting forever for a booked
+    // date that can never appear.
+    const cfg = await new Promise((r) => chrome.storage.local.get(['config'], (d) => r(d.config || {})));
+    if (cfg.mode === 'reschedule' && !extractBookedDate() && pageShowsNoExistingBooking()) {
+      log('No existing booking on this account — nothing to reschedule.');
+      chrome.runtime.sendMessage({ type: 'NO_BOOKING_FOUND' });
+      return false;
+    }
 
     // 1. Expand accordion if needed (if it's not already expanded)
     // The header usually has an icon or is an h5/a tag without a specific appointment href.
