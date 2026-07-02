@@ -1,4 +1,5 @@
-# SardarJi Visa Scheduler — GitHub se download + Chrome mein load/reload
+# SardarJi Visa Scheduler — GitHub se download + Chrome mein load/reload (Windows)
+# macOS/Linux: bash reload-sardarji.sh
 # Double-click ya: powershell -ExecutionPolicy Bypass -File reload-sardarji.ps1
 
 $ErrorActionPreference = 'Stop'

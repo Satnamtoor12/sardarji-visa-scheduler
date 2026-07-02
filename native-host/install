@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Cross-platform native host installer (macOS / Linux / Windows Git Bash)
+DIR="$(cd "$(dirname "$0")" && pwd)"
+
+case "$(uname -s)" in
+  Darwin|Linux)
+    exec bash "$DIR/install.sh"
+    ;;
+  MINGW*|MSYS*|CYGWIN*)
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$DIR/install.ps1"
+    ;;
+  *)
+    echo "Unsupported OS. Use install.sh (Mac/Linux) or install.ps1 (Windows)." >&2
+    exit 1
+    ;;
+esac

@@ -85,7 +85,7 @@ function tryAutoUpdateFromGitHub() {
           }
 
           if (needsUpdate && typeof addLog === 'function') {
-            addLog('Update v' + remoteVersion + ' available. Run native-host\\install.ps1 once for auto-update.');
+            addLog('Update v' + remoteVersion + ' available. Run native-host/install once for auto-update.');
           }
           return false;
         });

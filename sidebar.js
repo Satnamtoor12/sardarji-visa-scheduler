@@ -57,6 +57,12 @@ function init() {
   startCountdownTimer();
 }
 
+function nativeInstallHint() {
+  var ua = navigator.userAgent || '';
+  if (/Win/i.test(ua)) return 'native-host\\install.ps1';
+  return 'native-host/install.sh';
+}
+
 function showUpdateStatus(state, text) {
   var el = $('updateStatus');
   if (!el) return;
@@ -69,7 +75,7 @@ function probeAutoUpdateStatus() {
   showUpdateStatus('', 'v' + ver + ' — icon click = GitHub sync');
   chrome.runtime.sendNativeMessage('com.sardarji.updater', { action: 'ping' }, function(resp) {
     if (chrome.runtime.lastError) {
-      showUpdateStatus('warn', 'v' + ver + ' — run native-host\\install.ps1 once');
+      showUpdateStatus('warn', 'v' + ver + ' — run ' + nativeInstallHint() + ' once');
       return;
     }
     showUpdateStatus('ready', 'v' + ver + ' — auto-update ready');

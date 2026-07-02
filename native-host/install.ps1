@@ -1,4 +1,5 @@
-# One-time setup: register SardarJi native updater with Chrome (Windows).
+# One-time setup: register SardarJi native updater with Chrome (Windows only).
+# macOS/Linux: use install.sh
 # Run: powershell -ExecutionPolicy Bypass -File native-host\install.ps1
 
 $ErrorActionPreference = 'Stop'
