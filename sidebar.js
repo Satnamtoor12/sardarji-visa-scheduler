@@ -31,7 +31,18 @@ function dayBefore(iso) {
   return localISODate(new Date(p[0], p[1] - 1, p[2] - 1));
 }
 
+function sanitizeHeader() {
+  document.title = 'SardarJi Scheduler';
+  var h1 = document.querySelector('.brand h1');
+  if (h1) h1.textContent = 'SardarJi Scheduler';
+  var stale = $('updateStatus');
+  if (stale) stale.remove();
+  var footer = $('footerVersion');
+  if (footer) footer.textContent = 'SardarJi v' + ((chrome.runtime.getManifest() || {}).version || '');
+}
+
 function init() {
+  sanitizeHeader();
   wireTabs();
   wireFetchBooked();
   wireBookedDateListener();
