@@ -290,6 +290,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
     case 'BOOKED_DATE_DETECTED':
       addLog('Booked date auto-detected: ' + (msg.date || 'unknown'));
+      // A real booking exists after all — clear any stale "no booking" alert.
+      chrome.storage.local.remove('noBookingAlert');
+      sendResponse({ ok: true });
+      break;
+    case 'NO_BOOKING_FOUND':
+      handleNoBookingFound();
       sendResponse({ ok: true });
       break;
     case 'CHECK_GITHUB_UPDATE':
@@ -398,7 +404,8 @@ function startMonitoring(config) {
       loginClearInProgress: false,
       loginInProgress: false,
       pausedState: null,
-      manualSessionMode: false
+      manualSessionMode: false,
+      noBookingAlert: null
     });
     if (config.mode === 'reschedule') {
       addLog('Reschedule mode: ' + config.facilityName + ' — hunting dates BEFORE ' +
@@ -841,6 +848,37 @@ function triggerBookedDateDetection(tabId) {
       if (chrome.runtime.lastError) return;
       if (resp && resp.date) addLog('Booked date from visa site: ' + resp.date);
     });
+  });
+}
+
+// Reschedule mode needs an existing booking to move. The content script sends
+// NO_BOOKING_FOUND when the continue_actions page offers plain "Schedule
+// Appointment" (no booking on the account) — stop monitoring and tell the
+// user to book a date first from the Schedule tab.
+const NO_BOOKING_MESSAGE =
+  'No booked appointment was found on this account, so there is nothing to reschedule. ' +
+  'Please book a date first: switch to the Schedule tab, book an appointment, ' +
+  'then use the Reschedule tab to move it to an earlier date.';
+
+function handleNoBookingFound() {
+  chrome.storage.local.get(['monitoring', 'config'], (d) => {
+    const cfg = d.config || {};
+    if (!d.monitoring || cfg.mode !== 'reschedule') return;
+    addLog('STOPPED: ' + NO_BOOKING_MESSAGE);
+    stopMonitoring();
+    // Persist so the sidebar shows the warning even if opened later.
+    chrome.storage.local.set({ noBookingAlert: { text: NO_BOOKING_MESSAGE, at: Date.now() } });
+    notifyDesktop('no-booking-' + Date.now(), {
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: 'Nothing to reschedule',
+      message: NO_BOOKING_MESSAGE,
+      priority: 2,
+      requireInteraction: true
+    });
+    sendTelegram('🔴 <b>Nothing to reschedule</b>\n' + NO_BOOKING_MESSAGE);
+    chrome.runtime.sendMessage({ type: 'NO_BOOKING_ALERT', text: NO_BOOKING_MESSAGE },
+      () => void chrome.runtime.lastError);
   });
 }
 

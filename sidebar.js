@@ -110,6 +110,9 @@ function updateBookedDateStatus(state, detail) {
   } else if (state === 'corrected') {
     el.classList.add('detected');
     el.textContent = '✓ Corrected to ' + (detail || '');
+  } else if (state === 'missing') {
+    el.classList.add('error');
+    el.textContent = 'No booking on this account — book a date first (Schedule tab).';
   } else {
     el.textContent = '';
   }
@@ -151,6 +154,13 @@ function wireBookedDateListener() {
   chrome.runtime.onMessage.addListener(function(msg) {
     if (msg && msg.type === 'BOOKED_DATE_DETECTED' && msg.date) {
       applyDetectedBookedDate(msg.date, msg.prevDate || '');
+    }
+    // Reschedule started but the account has no booking — monitoring was
+    // stopped by the background; surface the reason to the user.
+    if (msg && msg.type === 'NO_BOOKING_ALERT' && msg.text) {
+      updateStatus(false);
+      updateBookedDateStatus('missing');
+      alert(msg.text);
     }
   });
 }
@@ -688,7 +698,7 @@ function startReschedule() {
       facilityName: facilities.map(function(f) { return f.name; }).join(', '),
       scheduleId: oldConfig.scheduleId || null,
       dateFrom: fromDate,
-      dateTo: dateTo,
+      dateTo: toDate,
       intervalMin: minInt,
       intervalMax: Math.max(maxInt, minInt),
       autoBook: autoBook,
@@ -740,7 +750,7 @@ function setDateDefaults() {
 // ===== Load saved data =====
 function loadSavedData() {
   chrome.storage.local.get(
-    ['monitoring', 'config', 'stats', 'log', 'credentials', 'schedule', 'telegram', 'notifications', 'lastBooking', 'reschedule', 'activeTab', 'pausedState', 'slotHistory', 'nextCheckAt'],
+    ['monitoring', 'config', 'stats', 'log', 'credentials', 'schedule', 'telegram', 'notifications', 'lastBooking', 'reschedule', 'activeTab', 'pausedState', 'slotHistory', 'nextCheckAt', 'noBookingAlert'],
     function(data) {
       if (data.credentials) {
         if ($('email')) $('email').value = data.credentials.email || '';
@@ -801,6 +811,10 @@ function loadSavedData() {
         if ($('rsIntervalMax')) $('rsIntervalMax').value = data.reschedule.intervalMax || 120;
         if ($('rsAutoBook')) $('rsAutoBook').checked = data.reschedule.autoBook !== false;
       }
+
+      // Monitoring was stopped because the account has no booking — keep the
+      // warning visible until the user books a date or restarts.
+      if (data.noBookingAlert) updateBookedDateStatus('missing');
 
       setActiveTab(data.activeTab === 'reschedule' ? 'reschedule' : 'new', true);
 
@@ -907,7 +921,7 @@ function wireJumpToBottom() {
 // ===== Auto refresh =====
 function startAutoRefresh() {
   setInterval(function() {
-    chrome.storage.local.get(['monitoring', 'stats', 'log', 'lastBooking', 'config', 'reschedule', 'pausedState', 'slotHistory', 'nextCheckAt'], function(data) {
+    chrome.storage.local.get(['monitoring', 'stats', 'log', 'lastBooking', 'config', 'reschedule', 'pausedState', 'slotHistory', 'nextCheckAt', 'noBookingAlert'], function(data) {
       updateStatus(data.monitoring, data.config);
       updateStats(data.stats);
       updateLog(data.log);
@@ -918,11 +932,17 @@ function startAutoRefresh() {
 
       var rb = $('rsBookedDate');
       var rt = $('rsToDate');
-      if (rb && data.reschedule && data.reschedule.bookedDate) {
-        if (rb.value !== data.reschedule.bookedDate) rb.value = data.reschedule.bookedDate;
-        if (data.config && data.config.mode === 'reschedule' && data.config.bookedDate) {
-          updateBookedDateStatus('detected', data.config.bookedDate);
-        }
+      if (rb && data.reschedule && data.reschedule.bookedDate &&
+          rb.value !== data.reschedule.bookedDate) {
+        rb.value = data.reschedule.bookedDate;
+      }
+      // "No booking on this account" wins over detected/pending — a manually
+      // typed booked date means nothing when the site shows no booking.
+      if (data.noBookingAlert) {
+        updateBookedDateStatus('missing');
+      } else if (rb && data.reschedule && data.reschedule.bookedDate &&
+                 data.config && data.config.mode === 'reschedule' && data.config.bookedDate) {
+        updateBookedDateStatus('detected', data.config.bookedDate);
       } else if (data.config && data.config.mode === 'reschedule' && data.monitoring && !data.config.bookedDate) {
         updateBookedDateStatus('pending');
       }

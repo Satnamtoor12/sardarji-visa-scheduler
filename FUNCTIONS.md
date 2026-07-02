@@ -19,6 +19,7 @@ one-line description of what each does.
 | `handleCheckComplete` | Processes a finished check: stats, session-expiry → re-login, rate-limit backoff, reschedule. |
 | `handleLoginFailed` | Decides **stop** (wrong credentials / captcha) vs **retry** (timeout / transient), capped at `MAX_TRANSIENT_RETRIES`. |
 | `handleLoginSuccess` | Marks login successful, resets flags, resumes monitoring. |
+| `handleNoBookingFound` | Reschedule mode with no booking on the account: stops monitoring and alerts (log, desktop, Telegram, sidebar) to book a date first from the Schedule tab. |
 | `handlePageReady` | Central router for every page load (login / groups / continue-actions / appointment / logged-in / unknown). |
 | `handleSlotFound` | Fires the slot alert (deduped to once/hour per date+facility) — desktop notification + Telegram + sound. |
 | `isInActiveWindow` | Returns whether the current time/day is inside the configured active hours (schedule). |
@@ -76,8 +77,9 @@ one-line description of what each does.
 | `findScheduleOnPage` | Searches the page for the schedule ID (answers `FIND_SCHEDULE`). |
 | `goToSchedulePage` | Navigates to the schedule page (answers `GO_TO_SCHEDULE`). |
 | `findScheduleId` | Gets the schedule ID from config, URL, or page links. |
-| `clickScheduleAppointment` | Clicks "Schedule Appointment" on the continue-actions page. |
+| `clickScheduleAppointment` | Clicks "Schedule Appointment" on the continue-actions page; in reschedule mode first reports `NO_BOOKING_FOUND` if the account has no booking. |
 | `clickContinueOnGroupsPage` | Clicks "Continue" on the Groups page. |
+| `pageShowsNoExistingBooking` | Detects "no booking on this account": continue-actions offers plain "Schedule Appointment" with no "Reschedule Appointment". |
 
 ### Booked-date detection (reschedule auto-fetch)
 | Function | What it does |
@@ -150,6 +152,8 @@ one-line description of what each does.
 | `updateLog` | Renders the activity log; preserves scroll position and shows a "jump to latest" button if scrolled up. |
 | `wireJumpToBottom` | Wires the "↓ New logs" button to jump to the latest log entry. |
 | `startAutoRefresh` | Periodically (every 3s) refreshes status, stats, log, and checks for a new booking. |
+| `updateBookedDateStatus` | Sets the booked-date status line (auto-detecting / detected / corrected / no booking on account). |
+| `wireBookedDateListener` | Listens for `BOOKED_DATE_DETECTED` (fills the form) and `NO_BOOKING_ALERT` (shows the "book a date first" alert). |
 
 ---
 
