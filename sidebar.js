@@ -721,11 +721,11 @@ function wireStopButton() {
 function setDateDefaults() {
   var df = $('dateFrom');
   var dt = $('dateTo');
-  if (df && !df.value) df.value = new Date().toISOString().split('T')[0];
+  if (df && !df.value) df.value = localISODate(new Date());
   if (dt && !dt.value) {
     var future = new Date();
     future.setDate(future.getDate() + 90);
-    dt.value = future.toISOString().split('T')[0];
+    dt.value = localISODate(future);
   }
   var rf = $('rsFromDate');
   var rt = $('rsToDate');
