@@ -9,14 +9,8 @@ const SITE_URL = 'https://ais.usvisa-info.com/en-ca/niv';
 importScripts('updater.js');
 
 if (chrome.runtime.onStartup) {
-  chrome.runtime.onStartup.addListener(function() {
-    restoreIfActive();
-    tryAutoUpdateFromGitHub();
-  });
+  chrome.runtime.onStartup.addListener(restoreIfActive);
 }
-
-// Side panel open / service worker wake — catch up if GitHub is ahead.
-setTimeout(function() { tryAutoUpdateFromGitHub(); }, 1200);
 
 // Clicking the icon should START the flow (not just open the panel), so turn the
 // panel-on-click behaviour OFF and handle the click ourselves below.
@@ -187,9 +181,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       addLog('Booked date auto-detected: ' + (msg.date || 'unknown'));
       sendResponse({ ok: true });
       break;
-    case 'CHECK_GITHUB_UPDATE':
-      tryAutoUpdateFromGitHub().then(function(reloaded) { sendResponse({ ok: true, reloaded: reloaded }); });
-      return true;
+
     case 'LOGIN_FAILED':
       handleLoginFailed(msg.reason);
       sendResponse({ ok: true });

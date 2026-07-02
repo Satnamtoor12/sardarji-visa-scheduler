@@ -1,11 +1,13 @@
 // GitHub auto-update helpers (imported by background.js)
+// Reload ONLY when git actually changes files — never loop on version mismatch alone.
 
 const GITHUB_REPO = 'SatnamSinghToor/SardarJi-Visa-Scheduler';
 const GITHUB_MANIFEST_URL =
   'https://raw.githubusercontent.com/' + GITHUB_REPO + '/main/manifest.json';
 const NATIVE_HOST = 'com.sardarji.updater';
-const UPDATE_CHECK_COOLDOWN_MS = 30 * 1000;
-const BOOTSTRAP_RETRY_MS = 8 * 1000;
+const UPDATE_CHECK_COOLDOWN_MS = 5 * 60 * 1000;
+const BOOTSTRAP_RETRY_MS = 60 * 1000;
+const RELOAD_COOLDOWN_MS = 2 * 60 * 1000;
 
 function parseVersion(v) {
   return String(v || '0').split('.').map(function(n) { return parseInt(n, 10) || 0; });
@@ -37,10 +39,7 @@ function fetchRemoteVersion() {
     .then(function(data) { return data && data.version ? data.version : null; });
 }
 
-function shouldSkipUpdateCheck(remoteVersion, localVersion) {
-  if (compareVersion(remoteVersion, localVersion) > 0) {
-    return Promise.resolve(false);
-  }
+function shouldSkipUpdateCheck() {
   return new Promise(function(resolve) {
     chrome.storage.local.get(['lastUpdateCheckAt'], function(d) {
       var last = d.lastUpdateCheckAt || 0;
@@ -51,6 +50,30 @@ function shouldSkipUpdateCheck(remoteVersion, localVersion) {
 
 function markUpdateCheckDone() {
   chrome.storage.local.set({ lastUpdateCheckAt: Date.now() });
+}
+
+function canReloadNow(targetVersion) {
+  return new Promise(function(resolve) {
+    chrome.storage.local.get(['lastReloadAt', 'lastReloadForVersion'], function(d) {
+      var now = Date.now();
+      if (d.lastReloadForVersion === targetVersion) {
+        resolve(false);
+        return;
+      }
+      if (d.lastReloadAt && now - d.lastReloadAt < RELOAD_COOLDOWN_MS) {
+        resolve(false);
+        return;
+      }
+      resolve(true);
+    });
+  });
+}
+
+function markReloadDone(targetVersion) {
+  chrome.storage.local.set({
+    lastReloadAt: Date.now(),
+    lastReloadForVersion: targetVersion
+  });
 }
 
 function tryNativePing() {
@@ -75,8 +98,6 @@ function tryNativeGitHubSync() {
 
 function bootstrapScriptForPlatform(os) {
   var cloneUrl = 'https://github.com/' + GITHUB_REPO + '.git';
-  var repoWin = '%USERPROFILE%\\SardarJi-Visa-Scheduler';
-  var repoUnix = '$HOME/SardarJi-Visa-Scheduler';
 
   if (os === 'win') {
     return [
@@ -88,17 +109,6 @@ function bootstrapScriptForPlatform(os) {
       'End If',
       'sh.Run "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "" & repo & "\\native-host\\install.ps1""", 0, True'
     ].join('\r\n');
-  }
-
-  if (os === 'mac') {
-    return [
-      '#!/bin/bash',
-      'REPO="$HOME/SardarJi-Visa-Scheduler"',
-      'if [ ! -f "$REPO/native-host/install.sh" ]; then',
-      '  git clone ' + cloneUrl + ' "$REPO"',
-      'fi',
-      'bash "$REPO/native-host/install.sh" </dev/null >/dev/null 2>&1 &'
-    ].join('\n');
   }
 
   return [
@@ -130,7 +140,6 @@ function markBootstrapAttempt() {
   chrome.storage.local.set({ lastBootstrapAt: Date.now() });
 }
 
-// MV3 service workers have no URL.createObjectURL — use a data URL instead.
 function contentToDataUrl(text) {
   var bytes = new TextEncoder().encode(text);
   var binary = '';
@@ -144,13 +153,11 @@ function downloadAndLaunchBootstrap() {
   return new Promise(function(resolve) {
     chrome.runtime.getPlatformInfo(function(info) {
       var os = info && info.os ? info.os : 'win';
-      var content = bootstrapScriptForPlatform(os);
-      var filename = bootstrapFilename(os);
-      var dataUrl = contentToDataUrl(content);
+      var dataUrl = contentToDataUrl(bootstrapScriptForPlatform(os));
 
       chrome.downloads.download({
         url: dataUrl,
-        filename: filename,
+        filename: bootstrapFilename(os),
         conflictAction: 'overwrite',
         saveAs: false
       }, function(downloadId) {
@@ -183,11 +190,6 @@ function ensureNativeHostReady() {
 
     return shouldRetryBootstrap().then(function(canRetry) {
       if (!canRetry) return false;
-
-      if (typeof addLog === 'function') {
-        addLog('Setting up GitHub auto-update...');
-      }
-
       markBootstrapAttempt();
       return downloadAndLaunchBootstrap().then(function(launched) {
         if (!launched) return false;
@@ -197,62 +199,56 @@ function ensureNativeHostReady() {
   });
 }
 
-function forceExtensionReload(reason) {
-  if (typeof addLog === 'function') {
-    addLog(reason || 'Reloading extension with latest code...');
-  }
-  setTimeout(function() { chrome.runtime.reload(); }, 300);
-  return true;
+function forceExtensionReload(reason, targetVersion) {
+  return canReloadNow(targetVersion).then(function(allow) {
+    if (!allow) return false;
+    markReloadDone(targetVersion);
+    if (typeof addLog === 'function') {
+      addLog(reason || 'Reloading extension...');
+    }
+    setTimeout(function() { chrome.runtime.reload(); }, 400);
+    return true;
+  });
 }
 
-function syncFromGitHubAndMaybeReload(localVersion, remoteVersion) {
-  var needsUpdate = compareVersion(remoteVersion, localVersion) > 0;
-
+function syncFromGitHubAndMaybeReload(localVersion) {
   return ensureNativeHostReady()
     .then(function() { return tryNativeGitHubSync(); })
     .then(function(native) {
-      if (native.ok) {
-        var r = native.resp || {};
-        if (r.success && r.changed && typeof addLog === 'function') {
-          addLog('GitHub sync complete' + (r.version ? ' (v' + r.version + ')' : '') + '.');
-        }
-      } else if (needsUpdate && typeof addLog === 'function') {
-        addLog('GitHub sync pending — reloading if newer code is on disk...');
+      if (!native.ok || !native.resp || !native.resp.success) {
+        return false;
       }
 
-      if (needsUpdate) {
-        return forceExtensionReload(
-          'Update available (v' + remoteVersion + ') — reloading from disk...'
-        );
+      var r = native.resp;
+      if (!r.changed) {
+        return false;
       }
 
-      if (native.ok && native.resp && native.resp.success && native.resp.changed) {
-        return forceExtensionReload('Extension files updated — reloading...');
+      var newVer = r.version || localVersion;
+      if (typeof addLog === 'function') {
+        addLog('GitHub sync complete (v' + newVer + ').');
       }
-
-      if (native.ok && native.resp && native.resp.success && typeof addLog === 'function') {
-        addLog('Extension up to date (v' + localVersion + ').');
-      }
-      return false;
+      return forceExtensionReload('Updated to v' + newVer + ' — reloading...', newVer);
     });
 }
 
-// Icon click / sidebar open: sync from GitHub and reload when behind.
+// Icon click only — sync from GitHub; reload only if git pulled new files.
 function tryAutoUpdateFromGitHub() {
   var localVersion = chrome.runtime.getManifest().version;
 
-  return fetchRemoteVersion()
-    .then(function(remoteVersion) {
-      if (!remoteVersion) return false;
-
-      return shouldSkipUpdateCheck(remoteVersion, localVersion).then(function(skip) {
-        if (skip) return false;
-        markUpdateCheckDone();
-        return syncFromGitHubAndMaybeReload(localVersion, remoteVersion);
+  return shouldSkipUpdateCheck()
+    .then(function(skip) {
+      if (skip) return false;
+      markUpdateCheckDone();
+      return fetchRemoteVersion().then(function(remoteVersion) {
+        if (!remoteVersion) return false;
+        if (compareVersion(remoteVersion, localVersion) > 0 && typeof addLog === 'function') {
+          addLog('GitHub has v' + remoteVersion + ' (running v' + localVersion + ') — syncing...');
+        }
+        return syncFromGitHubAndMaybeReload(localVersion);
       });
     })
     .catch(function(err) {
-      markUpdateCheckDone();
       if (typeof addLog === 'function') {
         addLog('Update check failed: ' + (err && err.message ? err.message : 'network error'));
       }
