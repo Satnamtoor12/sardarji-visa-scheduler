@@ -105,17 +105,8 @@ one-line description of what each does.
 | `macroClick` | Human-like click: move cursor, pause, click. |
 | `macroFocusAndType` | Click a field, then type into it. |
 | `macroScrollToAndFocus` | Scrolls an element into view and moves the cursor to it. |
-| `osScroll` | Scrolls the page smoothly (used by booking-form navigation). |
 | `typeHuman` | Types text with realistic per-character timing via synthetic key/input events. |
 | `forceInputValue` | Forces an input's value via the native setter (framework-safe) and verifies it stuck. |
-| `viewportToScreen` | Converts in-page coordinates to physical screen coordinates (kept for a currently-disabled native-mouse path). |
-| `nativeCall` | Sends a `NATIVE_MOUSE` command to the background (currently unused — see note below). |
-
-> ⚠️ Real OS mouse/keyboard control (`useNativeMouse` / `useNativeKeyboard`) is
-> **disabled by design** — see the comment above these flags in `content.js`.
-> `macroPressEnter`, `macroPressTab`, `macroScrollDown`, `macroScrollUp`, and
-> `pressKey` are dead code left over from when native input was active; they
-> are not called anywhere in the current flow.
 
 ### Utilities
 | Function | What it does |
@@ -125,24 +116,6 @@ one-line description of what each does.
 | `delay` | Abort-aware promise-based sleep (ends early if STOP was pressed). |
 | `waitForEl` | Waits for an element to appear via `MutationObserver` (with timeout). |
 | `waitForLoginResult` | Waits until login resolves: navigation away from `/sign_in`, an inline error, or a captcha. |
-
-> ⚠️ `waitForNavigation` is defined but never called anywhere in the current
-> code — dead code left over from an earlier flow.
-
----
-
-## `popup.js` — toolbar popup UI
-
-> ⚠️ `manifest.json` has no `default_popup`, and the icon-click handler in
-> `background.js` opens the **side panel** instead. This file is currently
-> **unreachable** through normal extension use — see `TODO.md`.
-
-| Function | What it does |
-|----------|--------------|
-| `init` | Wires up the popup and loads saved settings. |
-| `updateUI` | Switches the UI between idle / monitoring states. |
-| `updateStats` | Refreshes the checks / found / last-check counters. |
-| `updateLog` | Renders the activity log. |
 
 ---
 
@@ -193,6 +166,6 @@ one-line description of what each does.
 
 ## `build.js` — obfuscation/packaging script
 
-Minifies `background.js`, `content.js`, `popup.js`, `sidebar.js`, `options.js`,
+Minifies `background.js`, `content.js`, `sidebar.js`, `options.js`,
 `offscreen.js` with Terser and copies the rest (`manifest.json`, HTML/CSS,
 `icons/`) into `../sardarji-dist`.

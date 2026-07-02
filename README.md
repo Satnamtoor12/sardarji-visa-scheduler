@@ -118,8 +118,8 @@ wrong or a CAPTCHA appears, it stops and tells you (no pointless retries).
 | `background.js`  | Service worker — login flow, monitoring loop, alerts                     |
 | `content.js`     | Runs on `ais.usvisa-info.com` — login, slot check, booking                |
 | `sidebar.*`      | Side panel UI — the screen you actually see (opens on icon click)        |
-| `popup.*`        | Toolbar popup UI — **currently unreachable** (no popup is wired up in the manifest; see [TODO.md](TODO.md)) |
 | `options.*`      | Settings page (`chrome://extensions` → Details → Extension options)      |
+| `options-base.css` | Shared form styles used by the settings page                         |
 | `offscreen.html` | Plays the alert sound                                                    |
 | `build.js`       | Packages/obfuscates the extension into `../sardarji-dist` (not needed for normal use — see [TODO.md](TODO.md) for a known gap) |
 

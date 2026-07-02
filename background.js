@@ -593,8 +593,7 @@ function stopMonitoring() {
     freshLoginTabId: null,
     loginPagePrepared: false
   });
-  // Tell any open visa tab to abort an in-progress login/booking immediately,
-  // so the native mouse/keyboard stops the moment STOP is pressed.
+  // Tell any open visa tab to abort an in-progress login/booking immediately.
   chrome.tabs.query({ url: 'https://ais.usvisa-info.com/*' }, (tabs) => {
     (tabs || []).forEach((t) => {
       try { chrome.tabs.sendMessage(t.id, { type: 'ABORT' }, () => void chrome.runtime.lastError); } catch (e) {}

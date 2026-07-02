@@ -25,26 +25,15 @@ yet — this is a punch list to work through.
 
 ## 🟠 Dead code
 
-2. **`popup.html` / `popup.js` / `popup.css` are unreachable in normal use.**
-   `manifest.json`'s `action` has no `default_popup`, and `background.js`'s
-   `chrome.action.onClicked` listener opens the **side panel** instead
-   (`sidebar.html`). Chrome only fires `onClicked` when there's no popup set,
-   so this *is* consistent — but it means these three files (~1000 lines
-   combined) are a near-complete, silently-drifting duplicate of
-   `sidebar.*` that no user ever sees.
-   → Decide: either wire up a real way to reach the popup (e.g. set it as
-   `default_popup` and drop the side-panel-only flow), or delete
-   `popup.html`/`popup.js`/`popup.css` entirely and stop maintaining two
-   copies of the same UI.
+2. ~~**`popup.html` / `popup.js` / `popup.css` are unreachable in normal use.**~~
+   **REMOVED.** Deleted the duplicate popup UI (~1000 lines). Shared form
+   styles kept as `options-base.css` for the settings page.
 
-3. **`content.js` — several functions are defined but never called:**
-   - `waitForNavigation` (line ~1417) — no call sites anywhere.
-   - `macroPressEnter`, `macroPressTab`, `macroScrollDown`, `macroScrollUp`,
-     `pressKey` — leftover from when native OS keyboard control
-     (`useNativeKeyboard`) was enabled; that flag is now hard-coded `false`
-     (see the comment above it) and nothing calls these anymore.
-   → Either remove them, or add a one-line comment marking them as
-   intentionally-kept/reserved if there's a reason to keep them.
+3. ~~**`content.js` — several functions are defined but never called**~~
+   **REMOVED.** Deleted `waitForNavigation`, `macroPressEnter`, `macroPressTab`,
+   `macroScrollDown`, `macroScrollUp`, `pressKey`, `osScroll`, and the entire
+   disabled native OS mouse/keyboard path (`nativeCall`, `viewportToScreen`,
+   `useNativeMouse`, `useNativeKeyboard`).
 
 ## 🟡 Duplication (same logic, multiple places — bugs get fixed in one copy and not the others)
 
@@ -54,22 +43,17 @@ yet — this is a punch list to work through.
    no shared helper. Worth extracting the common "clear + open login tab"
    logic into one function both call.
 
-5. **`popup.js` vs `sidebar.js`** — ~90% identical (save/load settings,
-   start/stop validation, stats/log rendering, password toggle, Telegram
-   test). Given #2, if popup is kept, this duplication should be resolved by
-   sharing one module; if popup is deleted, this resolves itself.
+5. ~~**`popup.js` vs `sidebar.js`**~~ **RESOLVED** by deleting `popup.js`.
 
-6. **The facility list and settings form are copy-pasted across three
-   places**: `popup.html`+`popup.js`, `sidebar.html`+`sidebar.js`, and
-   `options.html`+`options.js` all hard-code the same
-   `{89: Calgary, 90: Halifax, ...}` map and near-identical form markup
-   (schedule windows, Telegram fields, notification toggles). Adding or
-   renaming a facility currently means editing up to 6 files by hand.
+6. **The facility list and settings form are copy-pasted across two
+   places**: `sidebar.html`+`sidebar.js` and `options.html`+`options.js`
+   both hard-code the same `{89: Calgary, 90: Halifax, ...}` map and
+   near-identical form markup (schedule windows, Telegram fields,
+   notification toggles). Adding or renaming a facility currently means
+   editing up to 4 files by hand.
 
-7. **Telegram "test" message text has already drifted** between the
-   duplicated copies: `popup.js` sends *"SardarJi Appointment Scheduler
-   connected!"*, `sidebar.js` sends *"SardarJi Scheduler connected!"* —
-   harmless, but a live example of #5's maintenance risk.
+7. ~~**Telegram "test" message text drifted between popup and sidebar**~~
+   **RESOLVED** by deleting `popup.js`.
 
 ## 🟢 Documentation
 
@@ -85,9 +69,8 @@ yet — this is a punch list to work through.
    sync going forward, or consider generating it from source comments
    instead of hand-maintaining it.
 
-9. **`README.md`'s Files table lists `popup.*` as "Toolbar popup UI"**
-   without noting it's currently unreachable (#2). Once #2 is resolved one
-   way or the other, update the table accordingly.
+9. ~~**`README.md`'s Files table lists `popup.*`**~~ **FIXED** — table updated
+   after popup removal.
 
 ## ⚪ Permissions / minor
 
@@ -125,6 +108,6 @@ yet — this is a punch list to work through.
     is a plain string comparison — correct only because dates are always
     `YYYY-MM-DD`, where lexicographic order equals chronological order.
 13. `scheduleNext()` in `background.js` swaps `intervalMin`/`intervalMax` if
-    they arrive reversed, but both `sidebar.js` and `popup.js` already
-    enforce `intervalMax >= intervalMin` before saving — so that swap path
-    is effectively unreachable via the UI today. Harmless belt-and-suspenders.
+    they arrive reversed, but `sidebar.js` already enforces
+    `intervalMax >= intervalMin` before saving — so that swap path is
+    effectively unreachable via the UI today. Harmless belt-and-suspenders.

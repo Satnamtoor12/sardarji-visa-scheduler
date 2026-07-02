@@ -1196,23 +1196,7 @@
     return true;
   }
 
-  async function macroPressEnter() {
-    await pressKey('enter');
-  }
-
-  async function macroPressTab() {
-    await pressKey('tab');
-  }
-
-  async function macroScrollDown(clicks) {
-    await osScroll(-(clicks || 3));
-  }
-
-  async function macroScrollUp(clicks) {
-    await osScroll(clicks || 3);
-  }
-
-  // Scroll element into view, then move real cursor to it
+  // Scroll element into view, then move synthetic cursor to it
   async function macroScrollToAndFocus(el) {
     if (!el) return;
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1277,22 +1261,11 @@
     return cb.checked || wrapperChecked;
   }
 
-  // ==================== REAL OS MOUSE (via Native Host) ====================
-  // Sends mouse commands to background → native messaging host (Python)
-  // → Windows API SetCursorPos / mouse_event. Real cursor moves on screen.
+  // ==================== SYNTHETIC CURSOR (in-page events) ====================
 
   var lastX = 0;
   var lastY = 0;
   var cursorInit = false;
-  var nativeOk = true;
-  // Native OS mouse AND keyboard are DISABLED on purpose:
-  //  - Mouse: page→screen coordinate mapping is unreliable (side panel / DPI),
-  //    so the cursor flew off to empty areas.
-  //  - Keyboard: OS keystrokes go to whatever has OS focus, which turned out to
-  //    be the address bar / Google search instead of the visa field — that could
-  //    leak the password. Synthetic input writes straight into the right field.
-  var useNativeMouse = false;
-  var useNativeKeyboard = false;
 
   function initCursor() {
     if (cursorInit) return;
@@ -1303,43 +1276,6 @@
 
   function resetCursor() {
     cursorInit = false;
-  }
-
-  // Convert viewport coords (inside the webpage) to physical screen coords for
-  // the native host. The native host moves the OS cursor in PHYSICAL pixels,
-  // but everything in JS is in CSS (logical) pixels — so on a scaled display
-  // (125% / 150% etc.) we must multiply by devicePixelRatio, otherwise the
-  // cursor lands too far up-left in empty space. Results are clamped to the
-  // screen so the cursor never flies off to nothing.
-  function viewportToScreen(vx, vy) {
-    const dpr = window.devicePixelRatio || 1;
-    let x = (window.screenX + (window.outerWidth - window.innerWidth) / 2 + vx) * dpr;
-    let y = (window.screenY + (window.outerHeight - window.innerHeight) + vy) * dpr;
-    const maxX = (window.screen.width || 1920) * dpr - 1;
-    const maxY = (window.screen.height || 1080) * dpr - 1;
-    x = Math.max(0, Math.min(x, maxX));
-    y = Math.max(0, Math.min(y, maxY));
-    return { x, y };
-  }
-
-  function nativeCall(cmd, payload) {
-    return new Promise((resolve) => {
-      // Stop driving the real mouse/keyboard the instant STOP is pressed.
-      if (aborted) { resolve(null); return; }
-      try {
-        chrome.runtime.sendMessage({ type: 'NATIVE_MOUSE', cmd: cmd, payload: payload }, (resp) => {
-          if (chrome.runtime.lastError || !resp || !resp.ok) {
-            nativeOk = false;
-            resolve(null);
-            return;
-          }
-          resolve(resp);
-        });
-      } catch (e) {
-        nativeOk = false;
-        resolve(null);
-      }
-    });
   }
 
   async function moveCursorTo(el) {
@@ -1353,20 +1289,6 @@
     lastX = vx;
     lastY = vy;
 
-    // Real OS cursor movement is disabled (unreliable screen mapping). Use
-    // synthetic events on the exact element instead.
-    if (nativeOk && useNativeMouse) {
-      var screen = viewportToScreen(vx, vy);
-      var resp = await nativeCall('move', { x: Math.round(screen.x), y: Math.round(screen.y) });
-      if (resp && resp.ok) {
-        el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, clientX: vx, clientY: vy, view: window }));
-        el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: vx, clientY: vy, view: window }));
-        el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: vx, clientY: vy, view: window }));
-        return;
-      }
-    }
-
-    // Synthetic events only (no real cursor) — clicks land on the exact element
     el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, clientX: vx, clientY: vy, view: window }));
     el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: vx, clientY: vy, view: window }));
     el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: vx, clientY: vy, view: window }));
@@ -1376,13 +1298,6 @@
     var x = lastX;
     var y = lastY;
 
-    // Real OS click disabled (cursor mapping unreliable). The synthetic click
-    // below acts on the exact element, so the action still happens correctly.
-    if (nativeOk && useNativeMouse) {
-      await nativeCall('click', {});
-    }
-
-    // Always dispatch synthetic events (page JS listens for these)
     el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, view: window }));
     await delay(50 + Math.random() * 60);
     el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, view: window }));
@@ -1435,8 +1350,7 @@
     return true;
   }
 
-  // Type text — uses real OS keyboard via native host if available,
-  // falls back to synthetic events otherwise.
+  // Type text with synthetic events (stays in the target field).
   async function typeHuman(el, text) {
     el.setAttribute('autocomplete', 'off');
     el.focus();
@@ -1447,28 +1361,7 @@
     nativeSetter.call(el, '');
     el.dispatchEvent(new Event('input', { bubbles: true }));
 
-    // Native OS keyboard is disabled: it types into whatever has OS focus,
-    // which can be the address bar / Google search instead of this field
-    // (leaking the password). Type with synthetic events straight into el.
-    if (nativeOk && useNativeKeyboard) {
-      await nativeCall('key', { keys: ['ctrl', 'a'] });
-      await delay(80);
-      await nativeCall('key', { key: 'delete' });
-      await delay(80);
-      var resp = await nativeCall('type', { text: text });
-      if (resp && resp.ok) {
-        await delay(200);
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        if (el.value === text) {
-          log('Typed via native OS keyboard');
-          return;
-        }
-        log('Native type produced "' + el.value + '" expected "' + text + '" — using fallback');
-      }
-    }
-
-    // Synthetic key events + nativeSetter (reliable, stays in this field)
+    // Synthetic key events + nativeSetter
     for (var i = 0; i < text.length; i++) {
       if (aborted) return;
       var char = text[i];
@@ -1501,22 +1394,6 @@
     }
   }
 
-  // Press a key (Enter, Tab, etc.). Native keyboard is disabled (focus leaks),
-  // so this is a no-op unless explicitly re-enabled — login uses a button click.
-  async function pressKey(keyName) {
-    if (nativeOk && useNativeKeyboard) {
-      await nativeCall('key', { key: keyName });
-      await delay(50 + Math.random() * 80);
-    }
-  }
-
-  // Scroll the page. Use the page's own scroll (not the native OS wheel, which
-  // could scroll the wrong window).
-  async function osScroll(amount) {
-    window.scrollBy({ top: amount * -100, behavior: 'smooth' });
-    await delay(100 + Math.random() * 200);
-  }
-
   function waitForEl(selector, timeout) {
     return new Promise((resolve, reject) => {
       const el = document.querySelector(selector);
@@ -1544,25 +1421,6 @@
           resolve();
         }
       }, 400);
-    });
-  }
-
-  function waitForNavigation(timeout) {
-    return new Promise((resolve) => {
-      let resolved = false;
-      const check = setInterval(() => {
-        if (!window.location.href.includes('/sign_in') || resolved) {
-          clearInterval(check);
-          if (!resolved) { resolved = true; resolve(); }
-        }
-      }, 500);
-      // Also resolve on full page load event
-      window.addEventListener('load', () => {
-        if (!resolved) { resolved = true; clearInterval(check); resolve(); }
-      }, { once: true });
-      setTimeout(() => {
-        if (!resolved) { resolved = true; clearInterval(check); resolve(); }
-      }, timeout);
     });
   }
 
