@@ -127,9 +127,15 @@
           <input type="date" id="rsBookedDate" readonly title="Auto-filled from visa site after login">
           <div id="rsBookedStatus" class="booked-status"></div>
         </div>
-        <div class="section">
-          <label>Earliest Acceptable Date</label>
-          <input type="date" id="rsFromDate">
+        <div class="row">
+          <div class="section half">
+            <label>Date From</label>
+            <input type="date" id="rsFromDate">
+          </div>
+          <div class="section half">
+            <label>Date To</label>
+            <input type="date" id="rsToDate">
+          </div>
         </div>
         <div class="row">
           <div class="section half">
@@ -146,9 +152,9 @@
           <label for="rsAutoBook">Auto-reschedule when earlier date found</label>
         </div>
         <div class="tab-hint">
-          Pick your <b>Earliest Acceptable Date</b> and press START — your current
-          booked date is read from the visa site after login. Only dates
-          <b>before</b> that booking are considered.
+          Set your <b>Date From → To</b> window for an earlier slot and press START.
+          Your booked date is read from the visa site after login (must be
+          <b>after</b> Date To).
         </div>
       </div>
     </div>

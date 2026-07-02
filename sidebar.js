@@ -115,9 +115,17 @@ function updateBookedDateStatus(state, detail) {
   }
 }
 
+function capRsToBeforeBooked(bookedDate) {
+  var rt = $('rsToDate');
+  if (!rt || !bookedDate) return;
+  var maxTo = dayBefore(bookedDate);
+  if (!rt.value || rt.value >= bookedDate) rt.value = maxTo;
+}
+
 function applyDetectedBookedDate(date, prevDate) {
   var rb = $('rsBookedDate');
   if (rb) rb.value = date;
+  capRsToBeforeBooked(date);
   if (prevDate && prevDate !== date) {
     updateBookedDateStatus('corrected', date);
   } else {
@@ -130,7 +138,9 @@ function applyDetectedBookedDate(date, prevDate) {
     var c = d.config || {};
     if (c.mode === 'reschedule') {
       c.bookedDate = date;
-      c.dateTo = dayBefore(date);
+      var maxTo = dayBefore(date);
+      if (!c.dateTo || c.dateTo >= date) c.dateTo = maxTo;
+      else if (c.dateTo > maxTo) c.dateTo = maxTo;
       toSet.config = c;
     }
     chrome.storage.local.set(toSet);
@@ -630,6 +640,7 @@ function startReschedule() {
   var facility = ($('rsFacility') || {}).value || '';
   var bookedDate = ($('rsBookedDate') || {}).value || '';
   var fromDate = ($('rsFromDate') || {}).value || '';
+  var toDate = ($('rsToDate') || {}).value || '';
   var minInt = parseFloat(($('rsIntervalMin') || {}).value) || 60;
   var maxInt = parseFloat(($('rsIntervalMax') || {}).value) || 120;
   var autoBook = ($('rsAutoBook') || {}).checked || false;
@@ -637,25 +648,30 @@ function startReschedule() {
   var today = localISODate(new Date());
   if (!facility) { alert('Please select a facility'); return; }
   if (!fromDate) fromDate = today;
+  if (!toDate) {
+    if (bookedDate) toDate = dayBefore(bookedDate);
+    else {
+      var future = new Date();
+      future.setDate(future.getDate() + 90);
+      toDate = localISODate(future);
+    }
+  }
 
-  // Booked date is optional: leave it empty and the content script reads it
-  // off the site after login (Groups page shows the appointment).
-  var dateTo = null;
+  if (fromDate > toDate) { alert('Date From must be before Date To'); return; }
   if (bookedDate) {
     if (bookedDate <= today) { alert('Booked date must be in the future'); return; }
-    // Search window: [earliest acceptable] → [day before the booking].
-    dateTo = dayBefore(bookedDate);
-    if (fromDate > dateTo) { alert('Earliest acceptable date must be before your booked date'); return; }
+    if (fromDate >= bookedDate) { alert('Date From must be before your booked date'); return; }
+    if (toDate >= bookedDate) { alert('Date To must be before your booked date'); return; }
   }
 
   if (!prepareStart()) return;
 
-  // Remember the reschedule form so it survives sidebar reloads.
   chrome.storage.local.set({
     reschedule: {
       facilityId: facility,
       bookedDate: bookedDate,
       fromDate: fromDate,
+      toDate: toDate,
       intervalMin: minInt,
       intervalMax: maxInt,
       autoBook: autoBook
@@ -714,7 +730,13 @@ function setDateDefaults() {
     dt.value = future.toISOString().split('T')[0];
   }
   var rf = $('rsFromDate');
+  var rt = $('rsToDate');
   if (rf && !rf.value) rf.value = localISODate(new Date());
+  if (rt && !rt.value) {
+    var future = new Date();
+    future.setDate(future.getDate() + 90);
+    rt.value = localISODate(future);
+  }
 }
 
 // ===== Load saved data =====
@@ -773,6 +795,10 @@ function loadSavedData() {
           updateBookedDateStatus('detected', data.reschedule.bookedDate);
         }
         if ($('rsFromDate') && data.reschedule.fromDate) $('rsFromDate').value = data.reschedule.fromDate;
+        if ($('rsToDate')) {
+          $('rsToDate').value = data.reschedule.toDate ||
+            (data.config && data.config.mode === 'reschedule' ? data.config.dateTo : '') || '';
+        }
         if ($('rsIntervalMin')) $('rsIntervalMin').value = data.reschedule.intervalMin || 60;
         if ($('rsIntervalMax')) $('rsIntervalMax').value = data.reschedule.intervalMax || 120;
         if ($('rsAutoBook')) $('rsAutoBook').checked = data.reschedule.autoBook !== false;
@@ -893,6 +919,7 @@ function startAutoRefresh() {
       maybeShowBookingCelebration(data.lastBooking);
 
       var rb = $('rsBookedDate');
+      var rt = $('rsToDate');
       if (rb && data.reschedule && data.reschedule.bookedDate) {
         if (rb.value !== data.reschedule.bookedDate) rb.value = data.reschedule.bookedDate;
         if (data.config && data.config.mode === 'reschedule' && data.config.bookedDate) {
@@ -900,6 +927,9 @@ function startAutoRefresh() {
         }
       } else if (data.config && data.config.mode === 'reschedule' && data.monitoring && !data.config.bookedDate) {
         updateBookedDateStatus('pending');
+      }
+      if (rt && data.reschedule && data.reschedule.toDate && rt.value !== data.reschedule.toDate) {
+        rt.value = data.reschedule.toDate;
       }
     });
   }, 3000);

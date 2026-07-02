@@ -567,7 +567,9 @@
       const found = extractBookedDate();
       if (found) {
         config.bookedDate = found;
-        config.dateTo = dayBeforeISO(found);
+        const maxTo = dayBeforeISO(found);
+        if (!config.dateTo || config.dateTo >= found) config.dateTo = maxTo;
+        else if (config.dateTo > maxTo) config.dateTo = maxTo;
         saveDetectedBookedDate(found);
       } else if (!config.bookedDate) {
         log('Reschedule: booked date not detected yet — waiting for Groups page after login.');
@@ -1074,9 +1076,13 @@
       if (prev === found) return;
 
       c.bookedDate = found;
-      c.dateTo = dayBeforeISO(found);
+      const maxTo = dayBeforeISO(found);
+      if (!c.dateTo || c.dateTo >= found) c.dateTo = maxTo;
+      else if (c.dateTo > maxTo) c.dateTo = maxTo;
       const rs = d.reschedule || {};
       rs.bookedDate = found;
+      if (!rs.toDate || rs.toDate >= found) rs.toDate = maxTo;
+      else if (rs.toDate > maxTo) rs.toDate = maxTo;
       chrome.storage.local.set({ config: c, reschedule: rs }, () => {
         if (prev) {
           log('Booked date corrected: ' + prev + ' → ' + found);
